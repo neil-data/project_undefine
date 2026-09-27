@@ -35,4 +35,5 @@ export interface ThreatCase {
     contributions: Array<{ label: string; points: number }>;
     method: string;
   } | null;
+  malwareBazaar?: Record<string, any> | null;
 }

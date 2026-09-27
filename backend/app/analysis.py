@@ -31,7 +31,7 @@ from .models.api_models import (
     verdict_from_score,
     confidence_from_signals,
 )
-from . import geoip, store
+from . import geoip, store, malware_bazaar
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,6 +101,41 @@ class UnsupportedFormatError(ValueError):
     """Raised when the analyzed file isn't a format the engine supports."""
 
 
+def _is_valid_ipv4(val: str) -> bool:
+    try:
+        import ipaddress
+        ip = ipaddress.ip_address(val)
+        if ip.version != 4 or ip.is_unspecified or ip.is_multicast:
+            return False
+        if val.startswith("0.") or val == "255.255.255.255":
+            return False
+        oids = ("1.3.6.1", "1.2.840", "2.16.840", "2.5.4", "0.9.2342", "1.3.14.3")
+        if any(val == prefix or val.startswith(prefix + ".") for prefix in oids):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _is_valid_url(url: str) -> bool:
+    if not url or len(url) < 10:
+        return False
+    lowered = url.lower()
+    if any(lowered.startswith(bad) for bad in ("http/1.", "http/2", "httponly", "httpu", "http-equiv")):
+        return False
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(url)
+        if parts.scheme.lower() not in ("http", "https", "ftp", "ftps"):
+            return False
+        host = parts.hostname or ""
+        if not host or "." not in host or any(c in host for c in ('"', "'", "<", ">", "*", "^", "\\", "{", "}")):
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict] = None) -> dict:
     """
     Combine and deduplicate network observables from static + dynamic sources.
@@ -108,8 +143,8 @@ def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict]
     Never fabricates indicators — only uses real analysis engine output.
     """
     extracted = raw_static.get("extracted_strings", {})
-    static_ips: list[str] = list(extracted.get("ips", []))
-    static_urls: list[str] = list(extracted.get("urls", []))
+    static_ips: list[str] = [ip for ip in extracted.get("ips", []) if _is_valid_ipv4(ip)]
+    static_urls: list[str] = [u for u in extracted.get("urls", []) if _is_valid_url(u)]
     static_domains: list[str] = []
 
     # Also look for bare domain/URL/IP strings in explained_strings
@@ -118,12 +153,12 @@ def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict]
         etype = es.get("type", "")
         cat = es.get("category", "")
         if val:
-            if (etype == "ip" or re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", val)) and val not in static_ips:
+            if (etype == "ip" or re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", val)) and _is_valid_ipv4(val) and val not in static_ips:
                 static_ips.append(val)
             elif (etype == "domain" or cat == "network_indicator") and val not in static_domains:
-                if not val.startswith("http"):
+                if not val.startswith("http") and "." in val and not _is_valid_ipv4(val):
                     static_domains.append(val)
-            elif (etype == "url" or val.startswith("http")) and val not in static_urls:
+            elif (etype == "url" or val.startswith("http://") or val.startswith("https://")) and _is_valid_url(val) and val not in static_urls:
                 static_urls.append(val)
 
     # Extract domains/IPs from URLs found in static strings
@@ -131,11 +166,11 @@ def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict]
         m = re.match(r"https?://([^/:?#]+)", url)
         if m:
             host = m.group(1)
-            if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host):
+            if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host) and _is_valid_ipv4(host):
                 if host not in static_ips:
                     static_ips.append(host)
-            else:
-                if host not in static_domains:
+            elif not re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host):
+                if host not in static_domains and "." in host:
                     static_domains.append(host)
 
     # Dynamic analysis network connections
@@ -195,13 +230,28 @@ def _is_benign_domain(value: str) -> bool:
     return domain.endswith(("android.com", "google.com", "gstatic.com", "androidx.com")) or domain in {"localhost", "schemas.android.com"}
 
 
-def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict], indicators: dict) -> list[dict]:
+def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict], indicators: dict, malware_bazaar: Optional[dict] = None) -> list[dict]:
     """Classify indicators from provenance; never mark a static string malicious by itself."""
     static_ips = set((raw_static.get("extracted_strings") or {}).get("ips") or [])
     static_urls = set((raw_static.get("extracted_strings") or {}).get("urls") or [])
     dynamic_connections = {str(c.get("dest_ip") or c.get("ip")): c for c in (dynamic_output or {}).get("network_connections", []) if c.get("dest_ip") or c.get("ip")}
     dynamic_domains = {str(q) for q in (dynamic_output or {}).get("dns_queries", [])}
     records: list[dict] = []
+
+    # Include MalwareBazaar verified hash IOC if present
+    if malware_bazaar and malware_bazaar.get("found"):
+        records.append({
+            "indicator": raw_static.get("sha256") or malware_bazaar.get("sha256"),
+            "type": "HASH_SHA256",
+            "source": "MalwareBazaar (abuse.ch)",
+            "classification": "MALICIOUS",
+            "confidence": "HIGH",
+            "first_seen": malware_bazaar.get("first_seen") or raw_static.get("submitted_at"),
+            "occurrence_count": 1,
+            "evidence_state": "CONFIRMED",
+            "related_behavior": f"Known malware family: {malware_bazaar.get('signature') or 'Confirmed sample'}"
+        })
+
     for ip in indicators.get("ips", []):
         connection = dynamic_connections.get(ip)
         source = "Static + Dynamic" if ip in static_ips and connection else "Dynamic Network" if connection else "Static Analysis"
@@ -260,9 +310,22 @@ def _build_threat_assessment(
     mitre_techniques: list,
     capability_tags: list,
     has_dynamic: bool,
+    malware_bazaar: Optional[dict] = None,
 ) -> dict:
-    """Build an evidence-based threat assessment dict. No hardcoding, no fabrication."""
+    """Build an evidence-based threat assessment dict enriched with threat intel."""
     key_findings: list[str] = []
+
+    if malware_bazaar and malware_bazaar.get("found"):
+        sig = malware_bazaar.get("signature")
+        if sig:
+            key_findings.append(f"MalwareBazaar Intelligence: Confirmed malware signature '{sig}'")
+            risk_score = max(risk_score, 85)
+        tags = malware_bazaar.get("tags") or []
+        if tags:
+            key_findings.append(f"MalwareBazaar Threat Tags: {', '.join(tags)}")
+        vendor_verdicts = malware_bazaar.get("vendor_verdicts") or []
+        if vendor_verdicts:
+            key_findings.append(f"Threat Intel Vendor Detections: {', '.join(vendor_verdicts[:3])}")
 
     if yara_matches:
         severities = [m.get("severity", "medium") for m in yara_matches]
@@ -300,11 +363,108 @@ def _build_threat_assessment(
         "risk_score": risk_score,
         "threat_level": threat_level_from_score(risk_score),
         "verdict": verdict_from_score(risk_score),
-        "confidence": confidence_from_signals(
+        "confidence": max(confidence_from_signals(
             len(yara_matches), len(mitre_techniques), has_dynamic
-        ),
+        ), 95 if (malware_bazaar and malware_bazaar.get("signature")) else 0),
         "key_findings": key_findings,
     }
+
+
+def _generate_recommendations(
+    verdict: str,
+    risk_score: int,
+    capabilities: list,
+    mitre: list,
+    network_indicators: dict,
+    dynamic_output: Optional[dict] = None,
+    existing_recommendations: Optional[list] = None,
+) -> list[str]:
+    """
+    Synthesizes actionable, evidence-based recommendations for incident responders.
+    Derived from actual verdict, risk score, capabilities detected, and network C2 observables.
+    """
+    recs: list[str] = []
+    seen: set[str] = set()
+
+    def add_rec(text: str):
+        cleaned = text.strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            recs.append(cleaned)
+
+    # 1. Include pre-existing recommendations from investigation output
+    if existing_recommendations:
+        for r in existing_recommendations:
+            if isinstance(r, dict):
+                msg = r.get("description") or r.get("action") or str(r)
+            else:
+                msg = str(r)
+            if msg and len(msg) > 5 and not msg.startswith("Recommendation("):
+                add_rec(msg)
+
+    # Extract capability names & MITRE techniques
+    cap_names = {
+        (c.capability if hasattr(c, "capability") else c.get("capability", "")).lower()
+        for c in (capabilities or [])
+        if (getattr(c, "capability", None) or (isinstance(c, dict) and c.get("capability")))
+    }
+    mitre_ids = {
+        (t.technique_id if hasattr(t, "technique_id") else t.get("technique_id", "")).upper()
+        for t in (mitre or [])
+        if (getattr(t, "technique_id", None) or (isinstance(t, dict) and t.get("technique_id")))
+    }
+    c2_ips = [
+        c.get("ip") or c.get("dest_ip")
+        for c in (network_indicators.get("connections") or [])
+        if c.get("flagged_c2")
+    ]
+    c2_domains = network_indicators.get("domains") or []
+
+    # 2. Urgent Containment & Host Isolation based on Verdict & Risk Score
+    if risk_score >= 70 or verdict == "MALICIOUS":
+        add_rec("Isolate infected endpoint(s) from the internal network immediately to halt command-and-control communication and lateral propagation.")
+        add_rec("Revoke all active session tokens, OAuth grants, and stored credentials accessed from this endpoint.")
+    elif risk_score >= 30 or verdict == "SUSPICIOUS":
+        add_rec("Quarantine the suspicious binary artifact and initiate continuous monitoring on host and perimeter network interfaces.")
+
+    # 3. Network & C2 Blocking
+    if c2_ips:
+        add_rec(f"Block outbound traffic to confirmed C2 IP addresses at perimeter firewalls: {', '.join(str(ip) for ip in c2_ips[:3])}.")
+    if c2_domains:
+        suspicious_doms = [d for d in c2_domains if not any(d.endswith(x) for x in ("google.com", "android.com", "w3.org", "schema.org"))]
+        if suspicious_doms:
+            add_rec(f"Sinkhole or blacklist malicious domain queries at internal DNS resolvers: {', '.join(suspicious_doms[:3])}.")
+
+    # 4. Capability-Specific Remediation Actions
+    if any("sms" in c for c in cap_names) or "T1517" in mitre_ids:
+        add_rec("Audit linked financial accounts and notify mobile operators regarding potential SMS OTP interception and unauthorized transaction attempts.")
+    if any("keylog" in c or "credential" in c for c in cap_names) or "T1056.001" in mitre_ids:
+        add_rec("Enforce out-of-band master password resets across all corporate and administrative accounts used on this workstation.")
+    if any("overlay" in c or "phishing" in c for c in cap_names) or "T1417" in mitre_ids:
+        add_rec("Inspect accessibility service permissions and overlay privileges (SYSTEM_ALERT_WINDOW) to remove rogue UI hijackers.")
+    if any("reverse_shell" in c or "shell" in c for c in cap_names) or "T1059" in mitre_ids:
+        add_rec("Audit active process trees for unauthorized command interpreters (/bin/sh, powershell.exe, cmd.exe) and terminate active reverse-shell sessions.")
+    if any("location" in c or "gps" in c for c in cap_names) or "T1430" in mitre_ids:
+        add_rec("Revoke background location permissions and check device admin configurations for unauthorized tracking services.")
+
+    # 5. Persistence Removals
+    persistence_artifacts = (dynamic_output or {}).get("persistence_artifacts") or []
+    registry_changes = (dynamic_output or {}).get("registry_changes") or []
+    if persistence_artifacts:
+        add_rec(f"Remove persistence artifacts identified during detonation: {'; '.join(str(p) for p in persistence_artifacts[:2])}.")
+    elif registry_changes:
+        add_rec(f"Clean malicious autostart registry entries under HKCU/HKLM Run keys: {'; '.join(str(r) for r in registry_changes[:2])}.")
+
+    # 6. Fallback if clean or no findings
+    if not recs:
+        if risk_score == 0 or verdict in ("CLEAN", "BENIGN", "LOW_RISK") or risk_score < 20:
+            add_rec("No critical malicious indicators detected. Retain file hash in baseline repository for automated change tracking.")
+            add_rec("Continue routine endpoint monitoring and ensure standard defense-in-depth policies remain active.")
+        else:
+            add_rec("Preserve memory dump and network capture PCAP for secondary forensic examination.")
+            add_rec("Scan adjoining networked hosts for matching file hashes or network indicators.")
+
+    return recs
 
 
 def _build_ai_analysis(
@@ -313,12 +473,12 @@ def _build_ai_analysis(
     network_indicators: dict,
     geo_iocs: list,
     threat_assessment: dict,
+    malware_bazaar: Optional[dict] = None,
 ) -> dict:
     """
-    Assemble a structured AI analysis payload from real agent output.
+    Assemble a structured AI analysis payload from real agent output and threat intel.
     Merges narrative summary, investigation engine output, network intelligence,
-    and geo-ip context into a single structured object the frontend can render.
-    Never fabricates evidence — if insufficient evidence exists, states so clearly.
+    MalwareBazaar attribution, and geo-ip context into a single structured object.
     """
     narrative = final_state.get("narrative_summary") or ""
     is_fallback = "[FALLBACK" in narrative or "Groq call failed" in narrative
@@ -332,15 +492,38 @@ def _build_ai_analysis(
         or "Insufficient evidence available for AI analysis summary."
     )
 
-    # Extract recommendations
+    # Enrich executive summary with confirmed MalwareBazaar intelligence
+    if malware_bazaar and malware_bazaar.get("found"):
+        mb_sig = malware_bazaar.get("signature")
+        mb_tags = malware_bazaar.get("tags") or []
+        mb_desc = f"Identified as known malware family '{mb_sig}' on MalwareBazaar" if mb_sig else f"Cataloged on MalwareBazaar (Tags: {', '.join(mb_tags)})"
+        if is_fallback or not exec_summary or "Insufficient evidence" in exec_summary:
+            exec_summary = f"[Threat Intelligence Confirmed] {mb_desc}. " + exec_summary
+        else:
+            exec_summary = f"{mb_desc}. " + exec_summary
+
+    # Extract recommendations with evidence-based synthesis
     raw_recs = investigation_output.get("recommendations", [])
-    recommendations: list[str] = []
+    extracted_recs: list[str] = []
     for r in raw_recs:
         if isinstance(r, dict):
             desc = r.get("description") or r.get("action") or str(r)
-            recommendations.append(desc)
+            extracted_recs.append(desc)
         else:
-            recommendations.append(str(r))
+            extracted_recs.append(str(r))
+
+    dyn_out = final_state.get("dynamic_output")
+    dyn_dict = dyn_out.model_dump() if hasattr(dyn_out, "model_dump") else (dyn_out if isinstance(dyn_out, dict) else None)
+
+    recommendations = _generate_recommendations(
+        verdict=threat_assessment.get("verdict", "SUSPICIOUS"),
+        risk_score=final_state.get("risk_score", 0),
+        capabilities=final_state.get("capability_tags", []),
+        mitre=final_state.get("mitre_techniques", []),
+        network_indicators=network_indicators,
+        dynamic_output=dyn_dict,
+        existing_recommendations=extracted_recs,
+    )
 
     # Network interpretation (from real indicators only)
     network_interpretation = None
@@ -384,16 +567,52 @@ def _build_ai_analysis(
     ]
 
     inv_malware_exp = investigation_output.get("malware_explanation") or {}
-    malware_behavior = (
-        inv_malware_exp.get("behavior_description")
-        or inv_malware_exp.get("description")
-    )
+    if isinstance(inv_malware_exp, dict):
+        malware_behavior = (
+            inv_malware_exp.get("technical_details")
+            or inv_malware_exp.get("summary")
+            or inv_malware_exp.get("behavior_description")
+            or inv_malware_exp.get("description")
+        )
+    elif hasattr(inv_malware_exp, "technical_details"):
+        malware_behavior = inv_malware_exp.technical_details or getattr(inv_malware_exp, "summary", None)
+    else:
+        malware_behavior = None
+
+    if not malware_behavior:
+        caps = final_state.get("capability_tags") or []
+        mitre = final_state.get("mitre_techniques") or []
+        cap_names = [
+            c.capability if hasattr(c, "capability") else c.get("capability", "")
+            for c in caps
+            if (getattr(c, "capability", None) or (isinstance(c, dict) and c.get("capability")))
+        ]
+        mitre_names = [
+            t.technique_name if hasattr(t, "technique_name") else t.get("technique_name", "")
+            for t in mitre
+            if (getattr(t, "technique_name", None) or (isinstance(t, dict) and t.get("technique_name")))
+        ]
+        behavior_parts = []
+        if cap_names:
+            behavior_parts.append(f"Identified malicious behaviors: {', '.join(cap_names).replace('_', ' ')}.")
+        if mitre_names:
+            behavior_parts.append(f"Observed MITRE ATT&CK techniques: {', '.join(mitre_names[:4])}.")
+        if not behavior_parts and narrative and not is_fallback:
+            behavior_parts.append(narrative)
+        malware_behavior = " ".join(behavior_parts) if behavior_parts else None
 
     inv_exfil = investigation_output.get("exfiltration_analysis") or {}
-    evidence_correlation = (
-        inv_exfil.get("evidence_summary")
-        or inv_exfil.get("description")
-    )
+    if isinstance(inv_exfil, dict):
+        evidence_correlation = (
+            inv_exfil.get("risk_assessment")
+            or inv_exfil.get("timing_patterns")
+            or inv_exfil.get("evidence_summary")
+            or inv_exfil.get("description")
+        )
+    elif hasattr(inv_exfil, "risk_assessment"):
+        evidence_correlation = inv_exfil.risk_assessment or getattr(inv_exfil, "timing_patterns", None)
+    else:
+        evidence_correlation = None
 
     return {
         "executive_summary": exec_summary,
@@ -546,10 +765,30 @@ async def analyze_and_save(
                 "explained_strings": data.get("explained_strings") or [],
             }
 
+            # Query MalwareBazaar threat intelligence
+            mb_data = None
+            try:
+                mb_data = await malware_bazaar.lookup_hash(static_output.sha256)
+                if not mb_data and data.get("md5"):
+                    mb_data = await malware_bazaar.lookup_hash(data["md5"])
+            except Exception as e:
+                _LOGGER.warning(f"MalwareBazaar lookup failed: {e}")
+
+            if mb_data and mb_data.get("found"):
+                for yrule in (mb_data.get("yara_rules") or []):
+                    raw_static_dict["yara_matches"].append({
+                        "rule_name": f"[MalwareBazaar] {yrule.get('rule_name', 'Community_Yara')}",
+                        "category": "threat_intel",
+                        "severity": "high",
+                        "description": yrule.get("description") or f"Community YARA match from MalwareBazaar (Author: {yrule.get('author', 'abuse.ch')})",
+                    })
+                if mb_data.get("signature"):
+                    final_state["risk_score"] = max(final_state.get("risk_score", 0), 85)
+
             # Network indicators from static + dynamic
             network_indicators = _extract_network_indicators(raw_static_dict, dynamic_part)
             geo_iocs = geoip.lookup_many(network_indicators["ips"])
-            ioc_intelligence = _build_ioc_intelligence(raw_static_dict, dynamic_part, network_indicators)
+            ioc_intelligence = _build_ioc_intelligence(raw_static_dict, dynamic_part, network_indicators, malware_bazaar=mb_data)
             evidence_correlation = _build_evidence_correlations(raw_static_dict, dynamic_part, network_indicators, final_state.get("mitre_techniques", []))
             evidence_timeline = _build_evidence_timeline(static_output.submitted_at, dynamic_part, evidence_correlation)
             risk_explanation = _build_risk_explanation(static_output, final_state.get("mitre_techniques", []), final_state.get("capability_tags", []), final_state["risk_score"])
@@ -561,6 +800,7 @@ async def analyze_and_save(
                 mitre_techniques=final_state.get("mitre_techniques", []),
                 capability_tags=final_state.get("capability_tags", []),
                 has_dynamic=dynamic_part is not None,
+                malware_bazaar=mb_data,
             )
 
             # AI analysis
@@ -571,6 +811,7 @@ async def analyze_and_save(
                 network_indicators=network_indicators,
                 geo_iocs=geo_iocs,
                 threat_assessment=threat_assessment,
+                malware_bazaar=mb_data,
             )
 
             # Build the frontend-compatible dynamic_analysis shape
@@ -621,6 +862,7 @@ async def analyze_and_save(
                 "evidence_timeline": evidence_timeline,
                 "risk_explanation": risk_explanation,
                 "dynamic_analysis": dynamic_analysis_result,
+                "malware_bazaar": mb_data,
             }
 
         # ── Branch B: Raw CaseDetail dump ── import it directly ─────────────────
@@ -658,8 +900,26 @@ async def analyze_and_save(
 
         await store.save_case(case_data["sample_id"], case_data, event_type=event_type)
         return case_data
+    try:
+        import stat
+        os.chmod(file_path, stat.S_IREAD | stat.S_IWRITE)
+    except Exception:
+        pass
 
-    raw_static = await asyncio.to_thread(_static_engine.analyze, str(file_path))
+    def _analyze_with_retry(path_str: str):
+        import time
+        last_exc = None
+        for attempt in range(5):
+            try:
+                return _static_engine.analyze(path_str)
+            except PermissionError as pe:
+                last_exc = pe
+                time.sleep(0.2 * (attempt + 1))
+        if last_exc:
+            raise last_exc
+        return _static_engine.analyze(path_str)
+
+    raw_static = await asyncio.to_thread(_analyze_with_retry, str(file_path))
 
     normalized_file_type = str(raw_static.get("file_type", "unknown")).lower()
     if normalized_file_type not in _SUPPORTED_FILE_TYPES:
@@ -738,12 +998,32 @@ async def analyze_and_save(
         dynamic_out.model_dump() if dynamic_out is not None else None,
     )
 
+    # Query MalwareBazaar threat intelligence
+    mb_data = None
+    try:
+        mb_data = await malware_bazaar.lookup_hash(raw_static.get("sha256", ""))
+        if not mb_data and raw_static.get("md5"):
+            mb_data = await malware_bazaar.lookup_hash(raw_static["md5"])
+    except Exception as e:
+        _LOGGER.warning(f"MalwareBazaar lookup failed: {e}")
+
+    if mb_data and mb_data.get("found"):
+        for yrule in (mb_data.get("yara_rules") or []):
+            raw_static.setdefault("yara_matches", []).append({
+                "rule_name": f"[MalwareBazaar] {yrule.get('rule_name', 'Community_Yara')}",
+                "category": "threat_intel",
+                "severity": "high",
+                "description": yrule.get("description") or f"Community YARA match from MalwareBazaar (Author: {yrule.get('author', 'abuse.ch')})",
+            })
+        if mb_data.get("signature"):
+            final_state["risk_score"] = max(final_state.get("risk_score", 0), 85)
+
     # Geo-IP enrichment of all extracted IPs
     # Best-effort: geoip.lookup_many() returns [] when GEOIP_DB_PATH isn't configured
     # and gracefully falls back to HTTP lookup for public IPs
     all_ips = network_indicators["ips"]
     geo_iocs = geoip.lookup_many(all_ips)
-    ioc_intelligence = _build_ioc_intelligence(raw_static, dynamic_out.model_dump() if dynamic_out is not None else None, network_indicators)
+    ioc_intelligence = _build_ioc_intelligence(raw_static, dynamic_out.model_dump() if dynamic_out is not None else None, network_indicators, malware_bazaar=mb_data)
     evidence_correlation = _build_evidence_correlations(raw_static, dynamic_out.model_dump() if dynamic_out is not None else None, network_indicators, final_state.get("mitre_techniques", []))
     evidence_timeline = _build_evidence_timeline(static_output.submitted_at, dynamic_out.model_dump() if dynamic_out is not None else None, evidence_correlation)
     risk_explanation = _build_risk_explanation(static_output, final_state.get("mitre_techniques", []), final_state.get("capability_tags", []), final_state["risk_score"])
@@ -755,6 +1035,7 @@ async def analyze_and_save(
         mitre_techniques=final_state.get("mitre_techniques", []),
         capability_tags=final_state.get("capability_tags", []),
         has_dynamic=dynamic_out is not None,
+        malware_bazaar=mb_data,
     )
 
     # Structured AI analysis from investigation engine + narrative agent output
@@ -765,6 +1046,7 @@ async def analyze_and_save(
         network_indicators=network_indicators,
         geo_iocs=geo_iocs,
         threat_assessment=threat_assessment,
+        malware_bazaar=mb_data,
     )
 
     case_data = {
@@ -794,6 +1076,7 @@ async def analyze_and_save(
         "evidence_correlation": evidence_correlation,
         "evidence_timeline": evidence_timeline,
         "risk_explanation": risk_explanation,
+        "malware_bazaar": mb_data,
     }
     if extra_meta:
         case_data.update(extra_meta)  # e.g. original_filename / mime_type captured at upload time
@@ -805,8 +1088,31 @@ async def analyze_and_save(
 def compute_sha256(file_path: str | Path) -> str:
     """Chunked SHA-256 of a file on disk (used for upload dedup + canonical id)."""
     import hashlib
+    import time
+    import stat
+    import os
+
+    p = Path(file_path)
+    try:
+        os.chmod(p, stat.S_IREAD | stat.S_IWRITE)
+    except Exception:
+        pass
+
     h = hashlib.sha256()
-    with open(file_path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            h.update(chunk)
+    last_err = None
+    for attempt in range(10):
+        try:
+            with open(p, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+        except PermissionError as pe:
+            last_err = pe
+            time.sleep(0.1 * (attempt + 1))
+        except Exception as e:
+            last_err = e
+            time.sleep(0.05)
+
+    if last_err:
+        raise last_err
     return h.hexdigest()

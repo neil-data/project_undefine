@@ -50,17 +50,27 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             <div className="flex gap-3 justify-center pt-2">
               <button
                 onClick={this.handleReset}
-                className="px-4 py-2 text-xs uppercase tracking-wider bg-[#16ff4d] text-[#090909] font-bold rounded"
+                className="px-4 py-2 text-xs uppercase tracking-wider bg-[#16ff4d] hover:bg-[#16ff4d]/90 text-[#090909] font-bold rounded transition-all"
               >
                 Try Again
               </button>
               <button
                 onClick={() => window.location.reload()}
-                className="px-4 py-2 text-xs uppercase tracking-wider border border-[#222222] text-white rounded"
+                className="px-4 py-2 text-xs uppercase tracking-wider border border-[#222222] hover:bg-[#171717] text-white rounded transition-all"
               >
                 Reload Page
               </button>
+              <button
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.href = "/";
+                }}
+                className="px-4 py-2 text-xs uppercase tracking-wider border border-red-500/30 text-red-400 hover:bg-red-950/20 rounded transition-all"
+              >
+                Exit
+              </button>
             </div>
+
           </div>
         </div>
       );

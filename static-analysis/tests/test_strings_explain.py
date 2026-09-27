@@ -50,3 +50,17 @@ class TestExplainString:
         cmd_explanation = explain_string(_string("cmd.exe"))
         ps_explanation = explain_string(_string("powershell"))
         assert cmd_explanation.explanation != ps_explanation.explanation
+
+    def test_short_junk_unix_paths_rejected(self):
+        for junk in ["/L", "/@", "/H", "/I1", "/a", "/"]:
+            assert explain_string(_string(junk, StringType.UNIX_PATH)) is None
+
+    def test_valid_unix_paths_explained(self):
+        for valid_path in ["/bin/sh", "/etc/passwd", "/tmp/malware.sh", "/opt/myapp/config.json"]:
+            explanation = explain_string(_string(valid_path, StringType.UNIX_PATH))
+            assert explanation is not None
+            assert explanation.category in ("shell_execution", "credential_access", "filesystem_indicator", "persistence")
+        # Explicit test for unix_path fallback
+        custom_path = explain_string(_string("/opt/custom_dir/data.bin", StringType.UNIX_PATH))
+        assert custom_path is not None
+        assert custom_path.category == "filesystem_indicator"

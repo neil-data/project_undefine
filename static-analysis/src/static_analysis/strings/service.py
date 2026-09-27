@@ -59,14 +59,40 @@ _UTF8_RUN = re.compile(_UTF8_CHARACTER + rb"+")
 _UTF16LE_RUN = re.compile(rb"(?:[\x20-\x7e]\x00)+")
 _UTF16BE_RUN = re.compile(rb"(?:\x00[\x20-\x7e])+")
 
-_URL_PATTERN = re.compile(r"(?:https?|ftp)://[^\s\"'<>]+", re.IGNORECASE)
+_URL_PATTERN = re.compile(r"(?<![A-Za-z0-9_>:\*\\])(?:https?|ftps?)://[a-zA-Z0-9](?:[a-zA-Z0-9-._~:/?#\[\]@!$&'()*+,;=%]){4,}", re.IGNORECASE)
 _EMAIL_PATTERN = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}", re.IGNORECASE)
-_IPV4_PATTERN = re.compile(r"(?:\d{1,3}\.){3}\d{1,3}")
+_IPV4_PATTERN = re.compile(r"(?<![0-9.])((?:\d{1,3}\.){3}\d{1,3})(?![0-9.])")
 _IPV6_PATTERN = re.compile(r"(?<![0-9A-F:])(?:[0-9A-F]{0,4}:){2,7}[0-9A-F]{0,4}(?![0-9A-F:])", re.IGNORECASE)
-_WINDOWS_PATH_PATTERN = re.compile(r"(?:[A-Z]:\\|\\\\)[^\s\"'<>|?*]+", re.IGNORECASE)
-_UNIX_PATH_PATTERN = re.compile(r"/(?:[^\s\"'<>/]+/)*[^\s\"'<>/]+")
+_WINDOWS_PATH_PATTERN = re.compile(r"(?:[A-Z]:\\|\\\\)[^\s\"'<>|?*]{3,}", re.IGNORECASE)
+_UNIX_PATH_PATTERN = re.compile(
+    r"/(?:bin|boot|dev|etc|home|lib|lib64|media|mnt|opt|proc|root|run|sbin|srv|sys|tmp|usr|var|data|system|sdcard)(?:/[^\s\"'<>|?*]{1,200})+|"
+    r"/(?:[a-zA-Z0-9._\-+]{2,}/){2,}[a-zA-Z0-9._\-+]{2,}"
+)
 _REGISTRY_PATH_PATTERN = re.compile(r"(?:HKEY_[A-Z_]+|HKLM|HKCU|HKCR|HKU|HKCC)\\[^\s\"']+", re.IGNORECASE)
 _DOMAIN_PATTERN = re.compile(r"(?<![A-Z0-9.-])(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}(?![A-Z0-9.-])", re.IGNORECASE)
+
+
+def _is_valid_url(url: str) -> bool:
+    if len(url) < 10:
+        return False
+    lowered = url.lower()
+    if any(lowered.startswith(bad) for bad in ("http/1.", "http/2", "httponly", "httpu", "http-equiv")):
+        return False
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(url)
+        if parts.scheme.lower() not in ("http", "https", "ftp", "ftps"):
+            return False
+        host = parts.hostname or ""
+        if not host or len(host) < 3 or any(c in host for c in ('"', "'", "<", ">", "*", "^", "\\", "{", "}", ":")):
+            return False
+        if "." not in host and host != "localhost":
+            return False
+        if host.startswith(".") or host.endswith(".") or host.startswith("-") or host.endswith("-"):
+            return False
+        return True
+    except Exception:
+        return False
 
 
 def _is_incompressible(block: bytes) -> bool:
@@ -315,8 +341,12 @@ class StringExtractionService:
         )
         for pattern, string_type in patterns:
             for match in pattern.finditer(value):
-                candidate = match.group(0)
+                candidate = match.group(0).rstrip(".,);:'\"<>*")
+                if string_type is StringType.URL and not _is_valid_url(candidate):
+                    continue
                 if string_type in (StringType.IPV4, StringType.IPV6) and not self._valid_ip(candidate, string_type):
+                    continue
+                if string_type is StringType.UNIX_PATH and len(candidate) < 5:
                     continue
                 candidate_offset = offset + len(value[: match.start()].encode(encoding))
                 self._add_record(candidate, string_type, candidate_offset, encoding, records)
@@ -327,9 +357,15 @@ class StringExtractionService:
             parsed = ipaddress.ip_address(value)
         except ValueError:
             return False
-        return (string_type is StringType.IPV4 and parsed.version == 4) or (
-            string_type is StringType.IPV6 and parsed.version == 6
-        )
+        if string_type is StringType.IPV4:
+            if parsed.version != 4 or parsed.is_unspecified or value.startswith("0.") or value == "255.255.255.255":
+                return False
+            # Reject ASN.1 OID prefixes like 1.3.6.1, 1.2.840...
+            _oids = ("1.3.6.1", "1.2.840", "2.16.840", "2.5.4", "0.9.2342", "1.3.14.3", "1.2.")
+            if any(value == prefix or value.startswith(prefix + ".") or value.startswith(prefix) for prefix in _oids):
+                return False
+            return True
+        return string_type is StringType.IPV6 and parsed.version == 6
 
     @staticmethod
     def _add_record(

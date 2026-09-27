@@ -16,6 +16,7 @@ from .models.live_monitoring import (
     EnrichedEvent, EventType, ThreatIntelligence
 )
 from .models.db_models import AnalysisEvent
+from . import malware_bazaar
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -225,12 +226,15 @@ class EventProcessor:
             if cached:
                 return ThreatIntelligence.model_validate_json(cached)
 
-            # TODO: Implement actual threat intel lookups
-            # - VirusTotal
-            # - Local YARA rules
-            # - Known malware signatures
-
+            # Threat intel lookup via MalwareBazaar
             threat_intel = ThreatIntelligence(known_c2=False)
+            mb_data = await malware_bazaar.lookup_hash(hash_)
+            if mb_data and mb_data.get("found"):
+                threat_intel.known_c2 = True
+                threat_intel.threat_family = mb_data.get("signature") or (mb_data.get("tags")[0] if mb_data.get("tags") else None)
+                threat_intel.country = mb_data.get("origin_country")
+                threat_intel.organization = "MalwareBazaar (abuse.ch)"
+                threat_intel.reputation_score = 100
 
             await self.redis.setex(cache_key, 86400, threat_intel.model_dump_json())
 

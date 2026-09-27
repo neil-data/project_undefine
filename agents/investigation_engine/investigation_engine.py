@@ -242,17 +242,32 @@ class InvestigationEngine:
                 3. List of capabilities identified
                 """
                 
-                response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {"role": "system", "content": "You are a malware analyst explaining findings to investigators."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,
-                    max_tokens=500,
-                    timeout=15,
-                )
-                
+                preferred_model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+                candidate_models = [preferred_model, "qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"]
+                response = None
+                for model_name in candidate_models:
+                    if not model_name:
+                        continue
+                    try:
+                        response = client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": "You are a malware analyst explaining findings to investigators."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            temperature=0.3,
+                            max_tokens=500,
+                            timeout=15,
+                        )
+                        break
+                    except Exception as model_err:
+                        if "model_not_found" in str(model_err) or "does not exist" in str(model_err):
+                            continue
+                        raise model_err
+
+                if not response:
+                    raise RuntimeError("No compatible Groq model found")
+
                 ai_response = response.choices[0].message.content.strip()
                 
                 # Parse AI response (simplified - in production, use structured output)

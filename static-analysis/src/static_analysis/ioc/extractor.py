@@ -135,7 +135,7 @@ _PHONE_CONTEXT_TERMS = ("phone", "mobile", "sms", "tel", "call", "whatsapp",
 # Patterns
 # ============================================================================
 
-_URL_RE = re.compile(r"(?:https?|ftps?)://[^\s\"'<>\\]{4,2048}", re.IGNORECASE)
+_URL_RE = re.compile(r"(?<![A-Za-z0-9_>:\*\\])(?:https?|ftps?)://[^\s\"'<>\\]{4,2048}", re.IGNORECASE)
 _HOST_RE = re.compile(
     r"(?<![A-Za-z0-9.@-])((?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24})(?![A-Za-z0-9-])"
 )
@@ -271,14 +271,42 @@ def defang(value: str, ioc_type: IocType) -> str:
     return value
 
 
-def _ip_scope(value: str) -> IocScope | None:
+_OID_PREFIXES = ("1.3.6.1", "1.2.840", "2.16.840", "2.5.4", "0.9.2342", "1.3.14.3", "1.2.")
+
+def _is_oid_pattern(value: str, text: str = "") -> bool:
+    """Detect ASN.1 Object Identifier (OID) patterns and avoid misclassifying them as IPv4."""
+    if any(value == prefix or value.startswith(prefix + ".") or value.startswith(prefix) for prefix in _OID_PREFIXES):
+        return True
+    if text:
+        escaped = re.escape(value)
+        # Preceded or followed by dots and numbers e.g. .1.3.6.1 or 1.3.6.1.4
+        if re.search(r'(?:\d+\.)+' + escaped, text) or re.search(escaped + r'(?:\.\d+)+', text):
+            return True
+        # Preceded by OID keywords in context
+        if re.search(r'(?i)\b(?:oid|urn:oid|asn1|mib|iso)\b[^\w\n]{0,15}' + escaped, text):
+            return True
+    return False
+
+
+def _ip_scope(value: str, text: str = "") -> IocScope | None:
     try:
         address = ipaddress.ip_address(value)
     except ValueError:
         return None
-    if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved:
-        return IocScope.INTERNAL
-    if address.is_unspecified or address.is_multicast:
+    if address.version != 4:
+        if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_unspecified or address.is_multicast:
+            return IocScope.INTERNAL
+        return IocScope.EXTERNAL
+
+    # Strict IPv4 IOC validation:
+    # 0.0.0.0 or 0.x.x.x is unspecified / non-routable, not a real target IOC
+    if address.is_unspecified or value.startswith("0.") or value == "255.255.255.255":
+        return None
+    # Filter out ASN.1 OIDs (e.g. 1.3.6.1, 1.2.840...)
+    if _is_oid_pattern(value, text):
+        return None
+
+    if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast:
         return IocScope.INTERNAL
     return IocScope.EXTERNAL
 
@@ -393,9 +421,25 @@ class StringIocExtractor(IocExtractor):
         )
 
     def _add_url(self, found, counts, url: str, offset: int) -> None:
-        parts = urlsplit(url)
+        url = url.strip().rstrip(".,);:'\"<>*")
+        if len(url) < 10:
+            return
+        lowered = url.lower()
+        if any(lowered.startswith(bad) for bad in ("http/1.", "http/2", "httponly", "httpu", "http-equiv")):
+            return
+        try:
+            parts = urlsplit(url)
+        except Exception:
+            return
+        if parts.scheme.lower() not in ("http", "https", "ftp", "ftps"):
+            return
         host = parts.hostname or ""
-        if not host:
+        if not host or len(host) < 3 or any(c in host for c in ('"', "'", "<", ">", "*", "^", "\\", "{", "}", ":")):
+            return
+        # Host must have at least one dot or be localhost/onion or valid IP
+        if "." not in host and host != "localhost":
+            return
+        if host.startswith(".") or host.endswith(".") or host.startswith("-") or host.endswith("-"):
             return
 
         scope = IocScope.EXTERNAL
@@ -452,7 +496,7 @@ class StringIocExtractor(IocExtractor):
     def _add_ips(self, found, counts, text: str, offset: int,
                  derived_from: str | None = None) -> None:
         for candidate in re.findall(r"(?<![0-9.])((?:\d{1,3}\.){3}\d{1,3})(?![0-9.])", text):
-            scope = _ip_scope(candidate)
+            scope = _ip_scope(candidate, text)
             if scope is None:
                 continue
             note = ("Hardcoded remote address — contacted directly, with no DNS lookup to observe."

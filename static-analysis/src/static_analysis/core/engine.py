@@ -250,7 +250,11 @@ class StaticAnalysisEngine:
             })
 
         # Step 9: Unified Analysis Report Assembly
-        urls = [s.value for s in extracted_strings if hasattr(s, "string_type") and str(s.string_type) in ("StringType.URL", "url") or "http" in s.value]
+        urls = [
+            s.value for s in extracted_strings
+            if hasattr(s, "string_type") and str(s.string_type) in ("StringType.URL", "url")
+            and len(s.value) >= 10 and not any(s.value.lower().startswith(b) for b in ("http/1.", "http/2", "httponly", "httpu", "http-equiv"))
+        ]
         ips = [s.value for s in extracted_strings if hasattr(s, "string_type") and str(s.string_type) in ("StringType.IPV4", "ipv4")]
         keywords = [s.value for s in extracted_strings if any(kw in s.value.lower() for kw in ("cmd", "powershell", "shell", "c2", "socket", "intercept"))]
 

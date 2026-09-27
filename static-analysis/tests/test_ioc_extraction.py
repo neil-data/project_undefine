@@ -182,6 +182,40 @@ class TestNetworkIndicators:
         assert indicator.scope is IocScope.EXTERNAL
         assert indicator.is_actionable
 
+    @pytest.mark.parametrize("oid", [
+        "1.3.6.1",
+        "1.3.6.1.4.1",
+        "1.2.840.113549",
+        "OID: 1.3.6.1",
+    ])
+    def test_asn1_oid_rejected_as_ipv4(self, oid):
+        result = extract(f"Certificate extension {oid}")
+        assert not result.by_type(IocType.IPV4)
+
+    @pytest.mark.parametrize("ip_noise", [
+        "0.0.0.0",
+        "0.1.2.3",
+        "255.255.255.255",
+    ])
+    def test_unspecified_and_broadcast_ips_rejected(self, ip_noise):
+        result = extract(f"listen address {ip_noise}")
+        assert not result.by_type(IocType.IPV4)
+
+    @pytest.mark.parametrize("garbled_url", [
+        ">httpu",
+        ":httpu\"",
+        "*http2.TH9",
+        "httponlyL",
+        "9http",
+        "8httpu3A",
+        "http/1.1H9",
+        "http://",
+        "http://a",
+    ])
+    def test_garbled_urls_rejected(self, garbled_url):
+        result = extract(garbled_url)
+        assert not result.by_type(IocType.URL)
+
     def test_platform_host_is_scoped_out_of_the_actionable_list(self):
         result = extract("http://schemas.android.com/apk/res/android")
         assert result.actionable == ()

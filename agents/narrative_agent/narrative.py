@@ -102,17 +102,34 @@ def generate_narrative(
 
     try:
         client = Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Findings:\n{findings}\n\nWrite the summary now."},
-            ],
-            temperature=0.3,
-            max_tokens=300,
-            timeout=15,
-        )
-        return response.choices[0].message.content.strip()
+        preferred_model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+        candidate_models = [preferred_model, "qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"]
+        
+        last_err = None
+        for model_name in candidate_models:
+            if not model_name:
+                continue
+            try:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": f"Findings:\n{findings}\n\nWrite the summary now."},
+                    ],
+                    temperature=0.3,
+                    max_tokens=300,
+                    timeout=15,
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as ex:
+                last_err = ex
+                if "model_not_found" in str(ex) or "does not exist" in str(ex):
+                    continue
+                raise ex
+
+        if last_err:
+            raise last_err
+        return _fallback_summary(static, capabilities, risk_score)
     except Exception as e:
         # Never let an LLM/network failure crash the whole pipeline —
         # degrade to the template summary and keep going.

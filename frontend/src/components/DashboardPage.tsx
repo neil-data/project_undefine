@@ -56,7 +56,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   };
   const [activeTab, setActiveTab] = React.useState<
     "overview" | "upload" | "static" | "dynamic" | "behavior" | "mitre" | "reports" | "investigation" | "cases" | "network"
-  >("overview");
+  >("upload");
 
   const [cases, setCases] = React.useState<ThreatCase[]>([]);
   const [selectedCaseId, setSelectedCaseId] = React.useState<string>("");
@@ -69,6 +69,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadStep, setUploadStep] = React.useState("");
+  const [zipPassword, setZipPassword] = React.useState("");
   const [currentTime, setCurrentTime] = React.useState("");
   const [expandedBehaviorIdx, setExpandedBehaviorIdx] = React.useState<number | null>(0);
   const [casesSearchQuery, setCasesSearchQuery] = React.useState("");
@@ -184,18 +185,23 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         evidenceCorrelation: activeCaseDetail.evidence_correlation ?? [],
         evidenceTimeline: activeCaseDetail.evidence_timeline ?? [],
         riskExplanation: activeCaseDetail.risk_explanation ?? null,
+        malwareBazaar: activeCaseDetail.malware_bazaar ?? null,
       }
     : baseActiveCase;
 
 
-  // Live real-time UTC digital clock inside Top bar
+  // Live real-time IST digital clock inside Top bar
   React.useEffect(() => {
     const updateClock = () => {
       const d = new Date();
-      const hh = String(d.getUTCHours()).padStart(2, '0');
-      const mm = String(d.getUTCMinutes()).padStart(2, '0');
-      const ss = String(d.getUTCSeconds()).padStart(2, '0');
-      setCurrentTime(`${hh}:${mm}:${ss} UTC`);
+      const timeStr = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(d);
+      setCurrentTime(`${timeStr} IST`);
     };
     updateClock();
     const t = setInterval(updateClock, 1000);
@@ -203,7 +209,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }, []);
 
   // Real file upload pipeline
-  const handleRealUpload = async (file: File) => {
+  const handleRealUpload = async (file: File, customPassword?: string) => {
     setIsUploading(true);
     setUploadProgress(10);
     setUploadStep(`Uploading ${file.name} to security gateway...`);
@@ -217,8 +223,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       COMPLETED: 100,
     };
 
+    const effectivePassword = customPassword ?? (zipPassword.trim() || undefined);
+
     try {
-      const start = await uploadSample(file);
+      const start = await uploadSample(file, effectivePassword);
       const analysisId = start.analysis_id;
 
       // Poll the backend for the real pipeline state (never a fake timer).
@@ -296,7 +304,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       }, 500);
     } catch (err: any) {
       setIsUploading(false);
-      alert(`Upload failed: ${err.message || "Unknown error during analysis"}`);
+      const msg = err.message || "Unknown error during analysis";
+      if (msg.toLowerCase().includes("password") || msg.toLowerCase().includes("decrypted")) {
+        const userPass = window.prompt("This ZIP archive is password-protected. Please enter the password to extract:");
+        if (userPass) {
+          setZipPassword(userPass);
+          handleRealUpload(file, userPass);
+          return;
+        }
+      }
+      alert(`Upload failed: ${msg}`);
     }
   };
 
@@ -315,15 +332,22 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const rawTechniques: any[] = activeCase.mitreTechniques ?? [];
   const rawCapabilities: any[] = activeCase.capabilityTags ?? [];
 
+  const formatISTTime = (date: Date) => {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(date);
+  };
+
   const behaviorLog: { time: string; event: string; severity: string; desc: string; details: string }[] = [
     ...rawTechniques.map((t: any, i: number) => {
       const ts = new Date(Date.now() - (rawTechniques.length - i) * 2000);
-      const hh = String(ts.getUTCHours()).padStart(2, "0");
-      const mm = String(ts.getUTCMinutes()).padStart(2, "0");
-      const ss = String(ts.getUTCSeconds()).padStart(2, "0");
       const conf = typeof t.confidence === "number" ? t.confidence : 0.5;
       return {
-        time: `${hh}:${mm}:${ss}`,
+        time: formatISTTime(ts),
         event: `${t.technique_id} — ${t.technique_name}`,
         severity: conf >= 0.8 ? "CRITICAL" : conf >= 0.6 ? "HIGH" : "MEDIUM",
         desc: `MITRE technique detected: ${t.technique_name}`,
@@ -332,13 +356,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }),
     ...rawCapabilities.map((c: any, i: number) => {
       const ts = new Date(Date.now() - (rawCapabilities.length - i) * 1500);
-      const hh = String(ts.getUTCHours()).padStart(2, "0");
-      const mm = String(ts.getUTCMinutes()).padStart(2, "0");
-      const ss = String(ts.getUTCSeconds()).padStart(2, "0");
       const conf = typeof c.confidence === "number" ? c.confidence : 0.5;
       const evidenceList: string[] = Array.isArray(c.evidence) ? c.evidence : [];
       return {
-        time: `${hh}:${mm}:${ss}`,
+        time: formatISTTime(ts),
         event: `Capability: ${c.capability}`,
         severity: conf >= 0.8 ? "HIGH" : "MEDIUM",
         desc: evidenceList.length > 0 ? evidenceList[0] : `Capability indicator detected: ${c.capability}`,
@@ -348,7 +369,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-[#090909] text-foreground flex font-sans overflow-hidden select-none">
+    <div className="h-screen max-h-screen bg-[#090909] text-foreground flex font-sans overflow-hidden select-none">
       
       {/* Loading analysis overlay during ingestion */}
       {isUploading && (
@@ -379,11 +400,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         </div>
       )}
 
-      {/* ================= SIDEBAR ================= */}
-      <aside className="w-64 bg-[#111111] border-r border-[#222222] shrink-0 flex flex-col justify-between relative z-10">
-        <div>
+      {/* ================= SIDEBAR (FIXED TO VIEWPORT, NO DOWNWARD EXPANSION) ================= */}
+      <aside className="w-64 h-screen max-h-screen sticky top-0 bg-[#111111] border-r border-[#222222] shrink-0 flex flex-col justify-between relative z-20 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Logo */}
-          <div className="px-6 py-5 border-b border-[#222222] flex items-center gap-2.5">
+          <div className="px-6 py-5 border-b border-[#222222] flex items-center gap-2.5 shrink-0">
             <AgencyLogo className="w-8 h-8 object-contain" />
             <span className="text-sm font-bold uppercase tracking-wider text-white">
               {t("dashboard.brand")} <span className="text-[#16ff4d] font-mono text-[10px]">SOC</span>
@@ -391,7 +412,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           </div>
 
           {/* Nav links */}
-          <nav className="p-4 space-y-1">
+          <nav className="p-4 space-y-1 overflow-y-auto flex-1 min-h-0">
             <span className="text-[9px] uppercase tracking-widest text-[#6F6F6F] px-3 font-mono block mb-2 font-bold">
               {t("dashboard.modules")}
             </span>
@@ -427,8 +448,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           </nav>
         </div>
 
+
         {/* Refined enterprise operator profile widget */}
-        <div className="p-4 border-t border-[#222222] space-y-3.5">
+        <div className="p-4 border-t border-[#222222] space-y-3.5 shrink-0 bg-[#111111]">
           <div className="bg-[#171717] p-3 rounded-lg border border-[#222222] flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded bg-[#16ff4d]/10 border border-[#16ff4d]/30 flex items-center justify-center text-[#16ff4d] font-mono text-xs font-bold">
@@ -495,7 +517,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </aside>
 
       {/* ================= MAIN CONTENT AREA ================= */}
-      <main className="flex-1 bg-[#090909] flex flex-col overflow-hidden relative z-0">
+      <main className="flex-1 h-screen max-h-screen bg-[#090909] flex flex-col overflow-hidden relative z-0">
+
         
         {/* High-density informative Top bar */}
         <header className="h-16 border-b border-[#222222] px-6 flex items-center justify-between bg-[#111111]/80 backdrop-blur-md">
@@ -517,14 +540,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           </div>
 
           {/* Info cluster block */}
-          <div className="hidden lg:flex items-center gap-6 text-[10px] font-mono text-[#A0A0A0]">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${sandboxOnline ? "bg-[#16ff4d]" : "bg-[#6F6F6F]"}`} />
-              <span>{sandboxOnline ? t("dashboard.sandboxOnline") : t("dashboard.sandboxOffline")}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" />
-              <span>{currentTime || "00:00:00 UTC"}</span>
+          <div className="hidden lg:flex items-center gap-4 text-[10px] font-mono text-[#A0A0A0]">
+            <div className="flex items-center gap-1.5 bg-[#171717] px-3 py-1.5 rounded border border-[#222222]">
+              <Clock className="w-3.5 h-3.5 text-[#16ff4d]" />
+              <span className="text-white font-bold">{currentTime || "00:00:00 IST"}</span>
             </div>
           </div>
         </header>
@@ -579,6 +598,23 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
                 </div>
               </div>
 
+              {/* Optional ZIP Password Input */}
+              <div className="flex items-center gap-3 bg-[#111111] px-4 py-3 rounded-lg border border-[#222222]">
+                <Lock className="w-4 h-4 text-[#16ff4d] shrink-0" />
+                <div className="flex-1">
+                  <label className="block text-[9px] uppercase font-mono text-[#6F6F6F] font-bold tracking-wider">
+                    ZIP Password (Optional — auto-detects standard passwords: infected, malware, password, virus...)
+                  </label>
+                  <input
+                    type="text"
+                    value={zipPassword}
+                    onChange={(e) => setZipPassword(e.target.value)}
+                    placeholder="Enter custom ZIP password if known..."
+                    className="w-full bg-transparent text-xs text-white placeholder-[#555555] font-mono outline-none pt-0.5"
+                  />
+                </div>
+              </div>
+
               {/* Sample detonators row */}
               <div className="space-y-3.5">
                 <span className="text-[10px] font-mono text-[#6F6F6F] uppercase tracking-widest block font-bold">
@@ -619,8 +655,23 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
           {/* ================= TAB 4: DETONATION SANDBOX ================= */}
           {activeTab === "dynamic" && (
-            <DynamicSandboxTab activeCase={activeCase} />
+            <DynamicSandboxTab
+              activeCase={activeCase}
+              onNavigate={(tab) => setActiveTab(tab as any)}
+              onReload={async () => {
+                if (selectedCaseId) {
+                  try {
+                    const detail = await fetchCaseDetail(selectedCaseId);
+                    setActiveCaseDetail(detail);
+                  } catch (e) {
+                    console.error("Failed to refresh case detail:", e);
+                  }
+                }
+                await loadCases();
+              }}
+            />
           )}
+
 
           {/* ================= TAB 5: BEHAVIOR TIMELINE ================= */}
           {activeTab === "behavior" && (
@@ -764,9 +815,25 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#222222]/60 text-[#A0A0A0]">
-                    {cases
-                      .filter(c => c.name.toLowerCase().includes(casesSearchQuery.toLowerCase()) || c.hash.includes(casesSearchQuery))
-                      .map((c) => (
+                    {cases.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-[#6F6F6F]">
+                          <div className="flex flex-col items-center justify-center space-y-2">
+                            <span className="text-sm font-sans text-[#A0A0A0]">No forensic cases recorded for this account.</span>
+                            <span className="text-xs">Your workspace is clean. Ingest an artifact to begin forensic analysis.</span>
+                            <button
+                              onClick={() => setActiveTab("upload")}
+                              className="mt-2 px-3 py-1.5 bg-[#16ff4d]/10 hover:bg-[#16ff4d]/20 border border-[#16ff4d]/40 text-[#16ff4d] rounded text-xs uppercase tracking-wider font-bold transition-all cursor-pointer"
+                            >
+                              Ingest Artifact
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      cases
+                        .filter(c => c.name.toLowerCase().includes(casesSearchQuery.toLowerCase()) || c.hash.includes(casesSearchQuery))
+                        .map((c) => (
                         <tr 
                           key={c.id} 
                           onClick={() => setSelectedCaseId(c.id)}
@@ -798,7 +865,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
                           </td>
                           <td className="p-4 text-[#6F6F6F]">{c.date}</td>
                         </tr>
-                      ))}
+                      )))}
                   </tbody>
                 </table>
               </div>

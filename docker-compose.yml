@@ -26,24 +26,25 @@ services:
   mobsf:
     image: opensecurity/mobile-security-framework-mobsf:latest
     container_name: ps4_mobsf
+    environment:
+      - MOBSF_HOME=/home/mobsf/.MobSF
     ports:
-      - "8000:8000"
+      - "8003:8000"
     volumes:
       - mobsf_data:/home/mobsf/.MobSF
     privileged: true # required for the built-in dynamic analyzer (emulator)
-    devices:
-      - /dev/kvm:/dev/kvm # required for Android emulator hardware acceleration
+    # devices:
+    #   - /dev/kvm:/dev/kvm # required for Android emulator hardware acceleration (Linux host only)
     restart: unless-stopped
 
-  # SentinelScan API — was previously never containerized here at all
-  # (only its infra dependencies were), so `docker-compose up` alone never
-  # actually ran the app. Runs on 8001 to avoid clashing with mobsf's 8000.
+  # SentinelScan API
   backend:
+    image: e-rakshak-backend:v3.0
     build:
       context: .
       dockerfile: backend/Dockerfile
     ports:
-      - "8001:8000"
+      - "8000:8000"
     environment:
       # DOCKER_DATABASE_URL allows overriding for container setups, while defaulting
       # to the internal 'postgres' service container. This avoids inheriting a local
@@ -60,6 +61,8 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env — generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
       ALLOW_DEV_JWT_SECRET: ${ALLOW_DEV_JWT_SECRET:-0}
       GEOIP_DB_PATH: ${GEOIP_DB_PATH:-}
+      MALWARE_BAZAAR_API_KEY: ${MALWARE_BAZAAR_API_KEY:-}
+
     volumes:
       - ingestion_samples:/app/ingestion_samples
     depends_on:
@@ -86,6 +89,20 @@ services:
       - ingestion_samples:/app/ingestion_samples
     depends_on:
       - redis
+    restart: unless-stopped
+
+  # SentinelScan Frontend (Dashboard & Threat Console)
+  frontend:
+    image: e-rakshak-frontend:v3.0
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_BASE=http://localhost:8000/api
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:

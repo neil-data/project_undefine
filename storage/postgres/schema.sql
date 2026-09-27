@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS cases (
     triage_category     VARCHAR(50),                    -- loan_app_scam | echallan_scam | utility_bill_scam
     triage_confidence   NUMERIC(3,2),
 
+    user_email          VARCHAR(255),
+
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -38,7 +40,23 @@ CREATE TABLE IF NOT EXISTS cases (
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_cases_platform ON cases(platform);
 CREATE INDEX IF NOT EXISTS idx_cases_submitted_at ON cases(submitted_at DESC);
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_cases_user_email ON cases(user_email);
 CREATE INDEX IF NOT EXISTS idx_cases_triage_category ON cases(triage_category) WHERE triage_flagged = TRUE;
+
+
+-- ============================================================
+-- USER_CASES — links investigator accounts to cases
+-- Enables multi-tenant isolation without data leakage
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_cases (
+    user_email          VARCHAR(255) NOT NULL,
+    sample_id           VARCHAR(64) NOT NULL REFERENCES cases(sample_id) ON DELETE CASCADE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_email, sample_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_cases_email ON user_cases(user_email);
 
 
 -- ============================================================
@@ -206,3 +224,13 @@ ALTER TABLE cases ADD COLUMN IF NOT EXISTS analysis_status VARCHAR(20);
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS original_filename TEXT;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS mime_type VARCHAR(255);
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS dynamic_analysis JSONB;
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_cases_user_email ON cases(user_email);
+
+CREATE TABLE IF NOT EXISTS user_cases (
+    user_email          VARCHAR(255) NOT NULL,
+    sample_id           VARCHAR(64) NOT NULL REFERENCES cases(sample_id) ON DELETE CASCADE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_email, sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_cases_email ON user_cases(user_email);

@@ -71,8 +71,12 @@ class PeParser:
             ident=struct.unpack_from("<I",data,p)[0]; types.append(_RESOURCE_NAMES.get(ident,str(ident)))
         values=tuple(sorted(set(types))); return PeResourceInfo(values,"icon" in values or "group_icon" in values,"version" in values,"manifest" in values)
     @staticmethod
-    def _cstring(data,pos):
-        if pos>=len(data): return ""
-        return data[pos:data.find(b"\\0",pos) if data.find(b"\\0",pos)>=0 else len(data)].decode("ascii","replace")
+    def _cstring(data, pos):
+        if pos >= len(data):
+            return ""
+        end = data.find(b"\x00", pos)
+        if end < 0:
+            end = len(data)
+        return data[pos:end].decode("ascii", "replace")
     def _security(self,data,certificate,tls,rva,is64):
         offset,size=certificate; return PeSecurityInfo(bool(offset and size),offset or None,size or None,(),b"Rich" in data[:0x200])

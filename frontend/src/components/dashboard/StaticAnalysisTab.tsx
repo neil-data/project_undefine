@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Copy, Check, Search, FileCode, Shield, Server, Info, Hash } from "lucide-react";
+import { Copy, Check, Search, FileCode, Shield, Server, Info, Hash, Database, ExternalLink } from "lucide-react";
 import { ThreatCase } from "./types";
 
 interface StaticAnalysisTabProps {
@@ -131,6 +131,87 @@ export function StaticAnalysisTab({ activeCase }: StaticAnalysisTabProps) {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* MalwareBazaar Threat Intelligence (abuse.ch) */}
+          {activeCase.malwareBazaar?.found ? (
+            <div className="bg-[#090909] border border-red-500/30 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-[#ff4040]" />
+                  <span className="text-[11px] text-[#ff4040] font-bold uppercase tracking-wider font-sans">
+                    MalwareBazaar Global Threat Feed Hit
+                  </span>
+                  <span className="px-2 py-0.5 bg-red-950/40 border border-red-500/30 text-[#ff4040] text-[9px] rounded font-bold uppercase">
+                    CONFIRMED MALWARE
+                  </span>
+                </div>
+                {activeCase.malwareBazaar.bazaar_url && (
+                  <a
+                    href={activeCase.malwareBazaar.bazaar_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-[#00c2ff] hover:underline flex items-center gap-1 font-mono"
+                  >
+                    View on abuse.ch <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px] font-mono text-[#A0A0A0]">
+                <div className="space-y-1">
+                  <p><span className="text-white font-bold">SIGNATURE / FAMILY:</span> <span className="text-[#ff4040] font-bold text-xs">{activeCase.malwareBazaar.signature || "Known Malicious"}</span></p>
+                  {activeCase.malwareBazaar.delivery_method && (
+                    <p><span className="text-white font-bold">DELIVERY:</span> {activeCase.malwareBazaar.delivery_method}</p>
+                  )}
+                  {activeCase.malwareBazaar.first_seen && (
+                    <p><span className="text-white font-bold">FIRST SEEN:</span> {activeCase.malwareBazaar.first_seen}</p>
+                  )}
+                  {activeCase.malwareBazaar.reporter && (
+                    <p><span className="text-white font-bold">REPORTER:</span> @{activeCase.malwareBazaar.reporter}</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {activeCase.malwareBazaar.imphash && (
+                    <p className="truncate"><span className="text-white font-bold">IMPHASH:</span> {activeCase.malwareBazaar.imphash}</p>
+                  )}
+                  {activeCase.malwareBazaar.origin_country && (
+                    <p><span className="text-white font-bold">ORIGIN:</span> {activeCase.malwareBazaar.origin_country}</p>
+                  )}
+                  {activeCase.malwareBazaar.vendor_verdicts && activeCase.malwareBazaar.vendor_verdicts.length > 0 && (
+                    <div className="mt-1">
+                      <span className="text-white font-bold block">VENDOR DETECTIONS:</span>
+                      <div className="space-y-0.5 mt-0.5 max-h-16 overflow-y-auto">
+                        {activeCase.malwareBazaar.vendor_verdicts.slice(0, 4).map((v: string, idx: number) => (
+                          <p key={idx} className="text-red-400/90 truncate">• {v}</p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {activeCase.malwareBazaar.tags && activeCase.malwareBazaar.tags.length > 0 && (
+                <div className="pt-2 border-t border-[#222222] flex flex-wrap gap-1.5 items-center">
+                  <span className="text-[9px] text-[#6F6F6F] font-bold uppercase mr-1">TAGS:</span>
+                  {activeCase.malwareBazaar.tags.map((t: string, i: number) => (
+                    <span key={i} className="px-1.5 py-0.5 bg-[#171717] border border-[#333] text-[#A0A0A0] text-[9px] rounded font-mono">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-[#090909] border border-[#222222] rounded-lg p-3 flex items-center justify-between text-[10px] font-mono text-[#6F6F6F]">
+              <div className="flex items-center gap-2">
+                <Database className="w-3.5 h-3.5 text-[#6F6F6F]" />
+                <span>MalwareBazaar Intelligence (abuse.ch): Repository queried for sample hash.</span>
+              </div>
+              <span className="px-2 py-0.5 bg-[#171717] border border-[#222222] text-[#A0A0A0] rounded text-[9px]">
+                {activeCase.sha256 || activeCase.hash ? "NOT IN BAZAAR FEED" : "AWAITING HASH"}
+              </span>
             </div>
           )}
         </div>

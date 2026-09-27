@@ -1,4 +1,4 @@
-const API_BASE = ((import.meta as any).env?.VITE_API_BASE as string) || "http://localhost:8010/api";
+const API_BASE = ((import.meta as any).env?.VITE_API_BASE as string) || "http://localhost:8000/api";
 
 export interface CaseSummary {
   sample_id: string;
@@ -139,6 +139,7 @@ export interface CaseDetail {
     contributions: Array<{ label: string; points: number }>;
     method: string;
   } | null;
+  malware_bazaar?: Record<string, any> | null;
 }
 
 
@@ -304,9 +305,12 @@ export async function fetchCaseDetail(sampleId: string): Promise<CaseDetail> {
   return res.json();
 }
 
-export async function uploadSample(file: File): Promise<AnalysisStartResponse> {
+export async function uploadSample(file: File, password?: string): Promise<AnalysisStartResponse> {
   const formData = new FormData();
   formData.append("file", file);
+  if (password) {
+    formData.append("password", password);
+  }
 
   const res = await fetch(`${API_BASE}/cases/upload`, {
     method: "POST",
@@ -331,6 +335,27 @@ export async function fetchAnalysisStatus(analysisId: string): Promise<AnalysisS
       throw new Error("Analysis not found");
     }
     throw new Error("Failed to fetch analysis status");
+  }
+  return res.json();
+}
+
+export async function lookupMalwareBazaar(hashValue: string): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/threat-intel/bazaar/lookup/${encodeURIComponent(hashValue)}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to lookup hash ${hashValue} in MalwareBazaar`);
+  }
+  return res.json();
+}
+
+export async function fetchRecentMalwareBazaar(limit = 25): Promise<Record<string, any>> {
+  const res = await fetch(`${API_BASE}/threat-intel/bazaar/recent?limit=${limit}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch recent MalwareBazaar samples");
   }
   return res.json();
 }

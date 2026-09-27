@@ -1,4 +1,4 @@
-from app.analysis import (
+from backend.app.analysis import (
     _build_evidence_correlations,
     _build_ioc_intelligence,
     _build_risk_explanation,

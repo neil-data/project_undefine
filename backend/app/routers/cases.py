@@ -1,10 +1,14 @@
 import asyncio
+import os
+import stat
+import hashlib
 import shutil
 import tempfile
 import logging
 import zipfile
+from typing import Optional
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query, Form, Request
 
 from agents.orchestrator.orchestrator import build_graph
 from ..analysis import (
@@ -27,7 +31,7 @@ from ..models.api_models import (
     AnalysisStatus,
     risk_score_to_status,
 )
-from ..store import save_case, get_case, list_cases
+from ..store import save_case, get_case, list_cases, add_user_case_association
 from .. import search
 from .. import pipeline_status as ps
 from .. import sandbox
@@ -55,32 +59,121 @@ _ALLOWED_EXTENSIONS = {
 _MAX_UPLOAD_BYTES = int(__import__("os").environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024
 
 
-def _extract_zip_sample(archive_path: Path, temp_dir: str) -> tuple[str, Path]:
-    """Safely unpack exactly one supported sample from a ZIP archive."""
+COMMON_ZIP_PASSWORDS = [
+    b"infected",
+    b"malware",
+    b"password",
+    b"virus",
+    b"1234",
+    b"123456",
+    b"clean",
+    b"bank",
+    b"erakshak",
+    b"danger",
+    b"sample",
+    b"mysample",
+    b"123",
+]
+
+
+def _extract_zip_sample(archive_path: Path, temp_dir: str, password: Optional[str] = None) -> tuple[str, Path, str]:
+    """Safely unpack exactly one supported sample from a ZIP archive, supporting encrypted/password-protected ZIPs."""
     try:
-        with zipfile.ZipFile(archive_path) as archive:
+        import pyzipper
+        zip_opener = pyzipper.AESZipFile
+    except ImportError:
+        zip_opener = zipfile.ZipFile
+
+    try:
+        with zip_opener(archive_path) as archive:
             entries = [
                 info for info in archive.infolist()
                 if not info.is_dir() and Path(info.filename).suffix.lower() in _ALLOWED_EXTENSIONS
                 and Path(info.filename).suffix.lower() != ".zip"
             ]
             if len(entries) != 1:
-                raise HTTPException(status_code=422, detail="ZIP must contain exactly one supported sample (APK, EXE, DLL, ELF, or Mach-O).")
+                non_dir = [
+                    info for info in archive.infolist()
+                    if not info.is_dir() and Path(info.filename).suffix.lower() != ".zip"
+                ]
+                if len(non_dir) == 1:
+                    entries = non_dir
+                else:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"ZIP must contain exactly one supported sample (APK, EXE, DLL, ELF, or Mach-O). Found: {len(entries)}",
+                    )
+
             entry = entries[0]
-            if entry.flag_bits & 0x1:
-                raise HTTPException(status_code=422, detail="Password-protected ZIP files are not supported.")
-            if entry.file_size <= 0 or entry.file_size > _MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=413, detail="ZIP sample exceeds the configured upload limit.")
-            # Use only the basename so archive paths can never escape temp_dir.
             member_name = Path(entry.filename).name
             target_path = Path(temp_dir) / member_name
-            with archive.open(entry) as source, target_path.open("wb") as target:
-                shutil.copyfileobj(source, target, length=1024 * 1024)
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=422, detail="The uploaded ZIP file is invalid or corrupted.")
+
+            # Check if entry is password protected (flag bit 0)
+            is_encrypted = bool(entry.flag_bits & 0x1)
+            extracted_sha256 = None
+
+            if is_encrypted:
+                passwords_to_try: list[bytes] = []
+                if password:
+                    passwords_to_try.append(password.strip().encode("utf-8"))
+                for cp in COMMON_ZIP_PASSWORDS:
+                    if cp not in passwords_to_try:
+                        passwords_to_try.append(cp)
+
+                extracted = False
+                for pwd in passwords_to_try:
+                    try:
+                        h = hashlib.sha256()
+                        with archive.open(entry, pwd=pwd) as source, target_path.open("wb") as target:
+                            while True:
+                                chunk = source.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                target.write(chunk)
+                                h.update(chunk)
+                        extracted_sha256 = h.hexdigest()
+                        extracted = True
+                        break
+                    except Exception:
+                        if target_path.exists():
+                            target_path.unlink(missing_ok=True)
+                        continue
+
+                if not extracted:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Password-protected ZIP could not be decrypted. Please provide the ZIP password.",
+                    )
+            else:
+                if entry.file_size > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="ZIP sample exceeds the configured upload limit.")
+                h = hashlib.sha256()
+                with archive.open(entry) as source, target_path.open("wb") as target:
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        target.write(chunk)
+                        h.update(chunk)
+                extracted_sha256 = h.hexdigest()
+
+            try:
+                os.chmod(target_path, stat.S_IREAD | stat.S_IWRITE)
+            except Exception:
+                pass
+
+            if not target_path.exists() or target_path.stat().st_size <= 0:
+                raise HTTPException(status_code=422, detail="Extracted file from ZIP is empty.")
+            if target_path.stat().st_size > _MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail="ZIP sample exceeds the configured upload limit.")
+
+    except (zipfile.BadZipFile, Exception) as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=422, detail=f"Failed to extract ZIP archive: {e}")
 
     archive_path.unlink(missing_ok=True)
-    return member_name, target_path
+    return member_name, target_path, extracted_sha256
 
 def _guess_file_type(filename: str) -> Path:
     ext = Path(filename).suffix.lower()
@@ -121,9 +214,11 @@ async def _run_analysis_pipeline(
                 "original_filename": original_filename,
                 "mime_type": mime_type,
                 "analysis_status": ps.STATIC_ANALYSIS,
+                "user_email": user_email,
             },
         )
         case_data["analysis_status"] = ps.DYNAMIC_ANALYSIS
+        case_data["user_email"] = user_email
 
         # For JSON/BSON files the embedded SHA-256 becomes the sample_id, which
         # differs from analysis_id (SHA-256 of the uploaded file itself).  Save
@@ -131,13 +226,18 @@ async def _run_analysis_pipeline(
         if case_data.get("sample_id") != analysis_id:
             alias = dict(case_data)
             alias["sample_id"] = analysis_id
+            alias["user_email"] = user_email
             await save_case(analysis_id, alias, event_type="json_bson_alias")
 
         await ps.update_job(analysis_id, status=ps.DYNAMIC_ANALYSIS, stage="Checking isolated sandbox availability")
 
         # Only run sandbox for real binaries; JSON/BSON already carry dynamic data
         if case_data.get("dynamic_analysis") is None:
-            case_data["dynamic_analysis"] = await sandbox.run_dynamic_analysis(file_path, platform=case_data.get("platform"))
+            case_data["dynamic_analysis"] = await sandbox.run_dynamic_analysis(
+                file_path,
+                platform=case_data.get("platform"),
+                file_type=case_data.get("file_type"),
+            )
         dynamic = case_data["dynamic_analysis"]
 
         # Re-extract network indicators & Geo-IP now that dynamic analysis results exist
@@ -209,7 +309,12 @@ async def _run_analysis_pipeline(
 
 
 @router.post("/upload", response_model=AnalysisStartResponse, status_code=202)
-async def upload_sample(file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
+async def upload_sample(
+    request: Request,
+    file: UploadFile = File(...),
+    password: Optional[str] = Form(None),
+    current_user: str = Depends(get_current_user),
+):
     """
     Receives an uploaded binary file (APK, EXE, DLL, ELF, Mach-O), hashes it,
     and hands the analysis off to a background task. Returns immediately with
@@ -234,6 +339,7 @@ async def upload_sample(file: UploadFile = File(...), current_user: str = Depend
     temp_dir = tempfile.mkdtemp(prefix="sentinel_upload_")
     file_path = Path(temp_dir) / original_filename
     file_size_bytes = 0
+    hasher = hashlib.sha256()
     try:
         with open(file_path, "wb") as buffer:
             while True:
@@ -246,18 +352,32 @@ async def upload_sample(file: UploadFile = File(...), current_user: str = Depend
                         status_code=413, detail=f"File exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit"
                     )
                 buffer.write(chunk)
+                hasher.update(chunk)
         if file_size_bytes == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
+        try:
+            os.chmod(file_path, stat.S_IREAD | stat.S_IWRITE)
+        except Exception:
+            pass
+
         if is_zip_upload:
-            original_filename, file_path = _extract_zip_sample(file_path, temp_dir)
+            effective_password = (
+                password
+                or request.query_params.get("password")
+                or request.headers.get("x-zip-password")
+            )
+            original_filename, file_path, analysis_id = _extract_zip_sample(file_path, temp_dir, password=effective_password)
             file_type_value = str(_ALLOWED_EXTENSIONS[Path(original_filename).suffix.lower()])
             mime_type = "application/octet-stream"
             file_size_bytes = file_path.stat().st_size
+        else:
+            analysis_id = hasher.hexdigest()
 
-        analysis_id = await asyncio.to_thread(compute_sha256, file_path)
+        if not analysis_id:
+            analysis_id = await asyncio.to_thread(compute_sha256, file_path)
 
-        existing = await get_case(analysis_id)
+        existing = await get_case(analysis_id, user_email=current_user)
         if existing is not None:
             await ps.update_job(
                 analysis_id, status=ps.COMPLETED, stage="Already analyzed — returning existing case",
@@ -274,7 +394,28 @@ async def upload_sample(file: UploadFile = File(...), current_user: str = Depend
                 sha256=analysis_id,
                 file_size_bytes=existing.get("file_size_bytes") or file_size_bytes,
                 status=ps.COMPLETED,
-                message="Duplicate sample — showing the existing analysis.",
+                message="Duplicate sample — showing your existing analysis.",
+            )
+
+        existing_global = await get_case(analysis_id)
+        if existing_global is not None:
+            await add_user_case_association(current_user, analysis_id)
+            await ps.create_job(
+                analysis_id, user_email=current_user, original_filename=original_filename,
+                file_size_bytes=file_size_bytes, mime_type=mime_type, file_type=existing_global.get("file_type") or file_type_value,
+                status=ps.COMPLETED, stage="Already analyzed — attached to your account",
+                dynamic_status=(existing_global.get("dynamic_analysis") or {}).get("status"),
+            )
+            return AnalysisStartResponse(
+                analysis_id=analysis_id,
+                sample_id=analysis_id,
+                original_filename=original_filename,
+                file_type=existing_global.get("file_type") or file_type_value,
+                mime_type=existing_global.get("mime_type") or mime_type,
+                sha256=analysis_id,
+                file_size_bytes=file_size_bytes,
+                status=ps.COMPLETED,
+                message="Sample already analyzed across agency network — attached to your account registry.",
             )
 
         await ps.create_job(
@@ -313,6 +454,11 @@ async def upload_sample(file: UploadFile = File(...), current_user: str = Depend
 async def get_analysis_status(sample_id: str, current_user: str = Depends(get_current_user)):
     """Real analysis-pipeline progress for a sample being analyzed in the background."""
     job = await ps.get_job(sample_id)
+    if job is not None and job.get("user_email") and job.get("user_email") != current_user:
+        case_check = await get_case(sample_id, user_email=current_user)
+        if case_check is None:
+            raise HTTPException(status_code=404, detail=f"No analysis found for {sample_id}")
+
     if job is not None and job.get("status") != ps.COMPLETED:
         return AnalysisStatus(
             analysis_id=sample_id,
@@ -325,9 +471,9 @@ async def get_analysis_status(sample_id: str, current_user: str = Depends(get_cu
         )
 
     # COMPLETED: return final state from the job or fall back to the persisted case
-    case = await get_case(sample_id)
+    case = await get_case(sample_id, user_email=current_user)
     if case is None:
-        if job is None:
+        if job is None or (job.get("user_email") and job.get("user_email") != current_user):
             raise HTTPException(status_code=404, detail=f"No analysis found for {sample_id}")
         return AnalysisStatus(analysis_id=sample_id, status=job.get("status"), stage=job.get("stage"))
     return AnalysisStatus(
@@ -431,11 +577,11 @@ async def submit_sample(request: SubmitSampleRequest, current_user: str = Depend
 async def search_cases_endpoint(q: str = Query(..., min_length=1), current_user: str = Depends(get_current_user)):
     """
     Elasticsearch-backed case search. Falls back to substring-matching the
-    full case list when Elasticsearch is unavailable, so search never just
+    user's case list when Elasticsearch is unavailable, so search never just
     breaks — it only loses fuzzy/full-text matching until ES comes back.
     """
     matched_ids = await search.search_cases(q)
-    all_cases = await list_cases()
+    all_cases = await list_cases(user_email=current_user)
 
     if matched_ids is not None:
         matched_set = set(matched_ids)
@@ -455,7 +601,7 @@ async def search_cases_endpoint(q: str = Query(..., min_length=1), current_user:
 @router.get("", response_model=list[CaseSummary])
 async def get_all_cases(current_user: str = Depends(get_current_user)):
     """Case table data for the dashboard's main list view."""
-    cases = await list_cases()
+    cases = await list_cases(user_email=current_user)
     return [CaseSummary.model_validate(_with_summary_fields(c)) for c in cases]
 
 
@@ -475,7 +621,7 @@ def _with_summary_fields(c: dict) -> dict:
 @router.get("/{sample_id}", response_model=CaseDetail)
 async def get_case_detail(sample_id: str, current_user: str = Depends(get_current_user)):
     """Full case detail for the dashboard's case detail panel."""
-    case_data = await get_case(sample_id)
+    case_data = await get_case(sample_id, user_email=current_user)
     if case_data is None:
         raise HTTPException(status_code=404, detail=f"Case {sample_id} not found")
     try:

@@ -28,7 +28,7 @@ from . import db, search
 # `auth` to backend.app.routers.auth and would shadow the module.
 from .auth import get_secret_key
 from .ingestion_worker import start_ingestion_worker, stop_ingestion_worker
-from .routers import auth, cases, health, network_intelligence, live_monitoring
+from .routers import auth, cases, health, network_intelligence, live_monitoring, threat_intel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,6 +95,8 @@ app.include_router(auth.router)
 app.include_router(cases.router)
 app.include_router(network_intelligence.router)
 app.include_router(live_monitoring.router)
+app.include_router(threat_intel.router)
+
 
 
 @app.get("/")

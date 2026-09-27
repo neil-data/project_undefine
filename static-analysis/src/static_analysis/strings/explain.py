@@ -87,6 +87,22 @@ _INDICATOR_EXPLANATIONS: dict[StringType, tuple[str, str, str]] = {
 }
 
 
+def _is_valid_unix_path(value: str) -> bool:
+    if len(value) < 5 or not value.startswith("/"):
+        return False
+    parts = [p for p in value.split("/") if p]
+    if not parts or all(len(p) <= 1 for p in parts):
+        return False
+    common_roots = (
+        "bin", "boot", "dev", "etc", "home", "lib", "lib64", "media", "mnt",
+        "opt", "proc", "root", "run", "sbin", "srv", "sys", "tmp", "usr",
+        "var", "data", "system", "sdcard"
+    )
+    if parts[0].lower() in common_roots:
+        return True
+    return len(parts) >= 2 and len(value) >= 6
+
+
 def explain_string(item: ExtractedString) -> StringExplanation | None:
     """Return a plain-language explanation for one extracted string, if any.
 
@@ -106,6 +122,9 @@ def explain_string(item: ExtractedString) -> StringExplanation | None:
                 explanation=explanation,
                 severity=severity,
             )
+
+    if item.string_type is StringType.UNIX_PATH and not _is_valid_unix_path(item.value):
+        return None
 
     indicator = _INDICATOR_EXPLANATIONS.get(item.string_type)
     if indicator is not None:

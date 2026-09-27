@@ -11,12 +11,14 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
     "@google/genai": "^2.4.0",
     "@splinetool/react-spline": "^4.1.0",
     "@splinetool/runtime": "^1.12.98",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.2",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/dagre": "^0.7.54",
     "@vitejs/plugin-react": "^5.0.4",
     "@xyflow/react": "^12.11.2",
     "class-variance-authority": "^0.7.1",

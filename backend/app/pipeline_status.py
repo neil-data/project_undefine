@@ -136,6 +136,17 @@ async def list_jobs() -> list[dict]:
         return [dict(j) for j in _jobs.values()]
 
 
+def _parse_dt(val) -> datetime:
+    if isinstance(val, str) and val.strip():
+        try:
+            return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.now(timezone.utc)
+    elif isinstance(val, datetime):
+        return val
+    return datetime.now(timezone.utc)
+
+
 async def _persist_upsert(job: dict) -> None:
     if not db.is_available():
         return
@@ -148,7 +159,7 @@ async def _persist_upsert(job: dict) -> None:
                     "(analysis_id, user_email, original_filename, file_size_bytes, mime_type, file_type, "
                     "status, stage, dynamic_status, error, created_at, updated_at) "
                     "VALUES (:analysis_id, :user_email, :original_filename, :file_size_bytes, :mime_type, "
-                    ":file_type, :status, :stage, :dynamic_status, :error, CAST(:created_at AS timestamptz), CAST(:updated_at AS timestamptz)) "
+                    ":file_type, :status, :stage, :dynamic_status, :error, :created_at, :updated_at) "
                     "ON CONFLICT (analysis_id) DO UPDATE SET "
                     "user_email = EXCLUDED.user_email, original_filename = EXCLUDED.original_filename, "
                     "file_size_bytes = EXCLUDED.file_size_bytes, mime_type = EXCLUDED.mime_type, "
@@ -167,8 +178,8 @@ async def _persist_upsert(job: dict) -> None:
                     "stage": job.get("stage"),
                     "dynamic_status": job.get("dynamic_status"),
                     "error": job.get("error"),
-                    "created_at": job.get("created_at"),
-                    "updated_at": job.get("updated_at"),
+                    "created_at": _parse_dt(job.get("created_at")),
+                    "updated_at": _parse_dt(job.get("updated_at")),
                 },
             )
     except Exception:

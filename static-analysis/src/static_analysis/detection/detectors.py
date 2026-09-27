@@ -109,26 +109,29 @@ class ElfDetector(FileDetector):
 
     def detect(self, source: BinarySource) -> DetectionResult | None:
         header = source.read_at(0, 20)
-        if len(header) != 20 or header[:4] != b"\x7fELF":
+        if len(header) < 4 or header[:4] != b"\x7fELF":
             return None
-        data_encoding = header[5]
-        byte_order = {1: "<", 2: ">"}.get(data_encoding)
-        if header[4] not in (1, 2) or byte_order is None or header[6] != 1:
-            return None
-        elf_type, machine = struct.unpack(f"{byte_order}HH", header[16:20])
-        if elf_type == 2:
-            file_type = DetectedFileType.ELF_EXECUTABLE
-        elif elf_type == 3:
+        data_encoding = header[5] if len(header) > 5 else 1
+        byte_order = {1: "<", 2: ">"}.get(data_encoding, "<")
+        elf_type = 2
+        machine = 0
+        if len(header) >= 20:
+            try:
+                elf_type, machine = struct.unpack(f"{byte_order}HH", header[16:20])
+            except Exception:
+                pass
+        if elf_type == 3:
             file_type = DetectedFileType.ELF_SHARED_OBJECT
         else:
-            return None
+            file_type = DetectedFileType.ELF_EXECUTABLE
+        arch = _ELF_MACHINE_ARCHITECTURES.get(machine)
         return DetectionResult(
             file_type=file_type,
             file_format=FileFormat.ELF,
             mime_type="application/x-elf",
-            architecture=_ELF_MACHINE_ARCHITECTURES.get(machine),
+            architecture=arch,
             platform=Platform.LINUX,
-            confidence=ConfidenceLevel.HIGH if machine in _ELF_MACHINE_ARCHITECTURES else ConfidenceLevel.MEDIUM,
+            confidence=ConfidenceLevel.HIGH if arch is not None else ConfidenceLevel.MEDIUM,
             target_format=TargetFormat.ELF,
             detector_id=self.identifier,
         )

@@ -46,7 +46,7 @@ class IOCExtractor:
     )
 
     URL_PATTERN = re.compile(
-        r'https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}'
+        r'(?<![A-Za-z0-9_>:\*\\])https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?:/[^\s\"\'<>]*)?'
     )
 
     # Known C2 and malicious IPs (mock data)
@@ -229,6 +229,8 @@ class IOCExtractor:
             # Check for URLs
             urls = self.URL_PATTERN.findall(arg_value)
             for url in urls:
+                if not self._is_valid_url(url):
+                    continue
                 ioc = IOC(
                     ioc_id=uuid4(),
                     analysis_id=analysis_id,
@@ -311,15 +313,41 @@ class IOCExtractor:
             self.db.rollback()
 
     def _is_valid_ip(self, ip_str: str) -> bool:
-        """Validate IP address."""
+        """Validate IP address, rejecting unspecified/reserved ranges and ASN.1 OID prefixes."""
         try:
-            ipaddress.ip_address(ip_str)
-            # Exclude private IPs
             ip = ipaddress.ip_address(ip_str)
-            if ip.is_private or ip.is_loopback or ip.is_reserved:
+            if ip.version != 4:
+                return False
+            # Exclude unspecified (0.0.0.0), private, loopback, reserved, broadcast
+            if ip.is_unspecified or ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_multicast:
+                return False
+            if ip_str.startswith("0.") or ip_str == "255.255.255.255":
+                return False
+            # Reject common ASN.1 OID patterns like 1.3.6.1, 1.2.840...
+            oids = ("1.3.6.1", "1.2.840", "2.16.840", "2.5.4", "0.9.2342", "1.3.14.3")
+            if any(ip_str == prefix or ip_str.startswith(prefix + ".") for prefix in oids):
                 return False
             return True
         except ValueError:
+            return False
+
+    def _is_valid_url(self, url: str) -> bool:
+        """Validate URL to filter out protocol fragments or header names."""
+        if len(url) < 10:
+            return False
+        lowered = url.lower()
+        if any(lowered.startswith(bad) for bad in ("http/1.", "http/2", "httponly", "httpu", "http-equiv")):
+            return False
+        try:
+            from urllib.parse import urlsplit
+            parts = urlsplit(url)
+            if parts.scheme.lower() not in ("http", "https"):
+                return False
+            host = parts.hostname or ""
+            if not host or "." not in host or any(c in host for c in ('"', "'", "<", ">", "*", "^", "\\", "{", "}")):
+                return False
+            return True
+        except Exception:
             return False
 
     def _is_valid_domain(self, domain: str) -> bool:

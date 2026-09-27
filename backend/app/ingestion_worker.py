@@ -150,7 +150,11 @@ async def _process_job(raw_job: str) -> None:
         if "dynamic_analysis" not in case_data:
             from . import sandbox
             from .store import save_case
-            dynamic = await sandbox.run_dynamic_analysis(sample_path, platform=case_data.get("platform"))
+            dynamic = await sandbox.run_dynamic_analysis(
+                sample_path,
+                platform=case_data.get("platform"),
+                file_type=case_data.get("file_type"),
+            )
             case_data["dynamic_analysis"] = dynamic
             case_data["analysis_status"] = "COMPLETED"
             await save_case(case_data["sample_id"], case_data, event_type="dynamic_analysis_checked")

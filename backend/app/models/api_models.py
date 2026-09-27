@@ -166,6 +166,7 @@ class CaseDetail(BaseModel):
     evidence_correlation: list[dict] = Field(default_factory=list)
     evidence_timeline: list[dict] = Field(default_factory=list)
     risk_explanation: Optional[dict] = None
+    malware_bazaar: Optional[dict] = None
 
     @field_validator(
         "sample_id", "platform", "file_type", "status", "submitted_at",
