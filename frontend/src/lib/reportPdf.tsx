@@ -601,12 +601,12 @@ export async function generateForensicPDF(
     }
   `;
 
-  // Hidden measurement host in the real DOM
+  // Off-screen measurement host in the real DOM
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
   host.lang = language;
   host.style.cssText =
-    "position:fixed;left:0;top:0;width:794px;opacity:0.01;pointer-events:none;z-index:-9999;background:#fff;";
+    "position:absolute;left:-9999px;top:0;width:794px;background:#ffffff;pointer-events:none;z-index:-9999;";
   host.innerHTML = `<style>${css}</style><div class="report-container"></div>`;
   document.body.appendChild(host);
 
@@ -983,7 +983,7 @@ export async function generateForensicPDF(
     }
 
     // Safety guard against runaway pagination
-    if (pages.length >= 25) {
+    if (pages.length >= 10) {
       return;
     }
 
@@ -1002,7 +1002,11 @@ export async function generateForensicPDF(
           passedTable = true;
         }
       });
-      trailingNodes.forEach((n) => n.remove());
+      trailingNodes.forEach((n) => {
+        if (n.parentNode) {
+          n.parentNode.removeChild(n);
+        }
+      });
     }
 
     // Start a new page for continuation
@@ -1062,32 +1066,65 @@ export async function generateForensicPDF(
       compress: true,
     });
 
-    for (let i = 0; i < pages.length; i++) {
+    const maxExportPages = Math.min(pages.length, 10);
+    for (let i = 0; i < maxExportPages; i++) {
       const pageEl = pages[i].page;
       const canvas = await Promise.race([
         html2canvas(pageEl, {
-          scale: 1.5,
+          scale: 1.25,
           useCORS: true,
           allowTaint: true,
           backgroundColor: "#ffffff",
           logging: false,
-          imageTimeout: 1500,
-          windowWidth: 794,
-          windowHeight: 1123,
+          imageTimeout: 1000,
+          scrollX: 0,
+          scrollY: 0,
         }),
         new Promise<HTMLCanvasElement>((_, reject) =>
-          setTimeout(() => reject(new Error("Page render timed out")), 7000)
+          setTimeout(() => reject(new Error(`Page ${i + 1} render timed out`)), 4500)
         ),
       ]);
 
       if (i > 0) {
         pdf.addPage("a4", "portrait");
       }
-      pdf.addImage(canvas.toDataURL("image/jpeg", 0.90), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", 0, 0, 210, 297, undefined, "FAST");
     }
 
     const safeName = (activeCase.name || "forensic_report").replace(/[^\w.-]+/g, "_");
     pdf.save(`${safeName}_Forensic_Report_${language}.pdf`);
+  } catch (renderError) {
+    console.warn("Direct canvas render failed, falling back to formatted print dialog:", renderError);
+    const safeName = (activeCase.name || "forensic_report").replace(/[^\w.-]+/g, "_");
+    const printWin = window.open("", "_blank");
+    if (printWin) {
+      printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>${safeName}_Forensic_Report_${language}</title>
+            <style>
+              ${css}
+              @media print {
+                body { margin: 0; padding: 0; background: #fff; }
+                .page { page-break-after: always; break-after: page; }
+              }
+            </style>
+          </head>
+          <body>
+            ${reportContainer.innerHTML}
+            <script>
+              window.onload = function() {
+                window.print();
+              };
+            <\/script>
+          </body>
+        </html>
+      `);
+      printWin.document.close();
+    } else {
+      throw renderError;
+    }
   } finally {
     if (host.parentNode) {
       host.parentNode.removeChild(host);

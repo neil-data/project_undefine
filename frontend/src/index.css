@@ -2,6 +2,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: dark;
   --background: 0 0% 3.5%; /* #090909 */
   --foreground: 0 0% 100%;
   --primary: 131 100% 54%; /* #16ff4d */
@@ -91,24 +92,33 @@ html, body {
   color-scheme: dark;
 }
 
-/* Global Custom Sleek Dark Scrollbar */
+/* Global Custom Sleek Dark Scrollbar for all viewports and nested containers */
+*::-webkit-scrollbar,
 ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 
+*::-webkit-scrollbar-track,
 ::-webkit-scrollbar-track {
-  background: #090909;
+  background: #090909 !important;
 }
 
+*::-webkit-scrollbar-thumb,
 ::-webkit-scrollbar-thumb {
-  background: #262626;
-  border-radius: 4px;
-  border: 1px solid #141414;
+  background: #262626 !important;
+  border-radius: 4px !important;
+  border: 1px solid #141414 !important;
 }
 
+*::-webkit-scrollbar-thumb:hover,
 ::-webkit-scrollbar-thumb:hover {
-  background: #16ff4d;
+  background: #16ff4d !important;
+}
+
+*::-webkit-scrollbar-corner,
+::-webkit-scrollbar-corner {
+  background: #090909 !important;
 }
 
 * {
