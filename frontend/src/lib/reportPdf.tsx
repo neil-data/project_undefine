@@ -118,7 +118,11 @@ function renderAiText(raw: unknown, unavailableFallback: string): string {
     return `<p class="muted">${escapeHtml(unavailableFallback)}</p>`;
   }
 
-  const lines = String(raw).trim().split("\n");
+  let normalized = String(raw).replace(/\r\n/g, "\n");
+  // If markdown table rows or headers are stuck inline on the same line, separate them with newlines:
+  normalized = normalized.replace(/([^\n|]+)(\|[^\n]+\|)/g, "$1\n$2");
+  normalized = normalized.replace(/\|\s*\|/g, "|\n|");
+  const lines = normalized.trim().split("\n");
   const out: string[] = [];
   let inTable = false;
   let tableHeaderDone = false;
@@ -598,7 +602,7 @@ export async function generateForensicPDF(
   host.setAttribute("aria-hidden", "true");
   host.lang = language;
   host.style.cssText =
-    "position:fixed;left:-100000px;top:0;width:794px;background:#fff;z-index:-1;";
+    "position:fixed;left:0;top:0;width:794px;opacity:0.01;pointer-events:none;z-index:-9999;background:#fff;";
   host.innerHTML = `<style>${css}</style><div class="report-container"></div>`;
   document.body.appendChild(host);
 
@@ -966,6 +970,19 @@ export async function generateForensicPDF(
       return;
     }
 
+    if (rowsThatFit <= 0) {
+      // Guarantee progress: force at least 1 row to stay on this page to prevent infinite recursive loop!
+      if (rows.length > 0) {
+        tbody?.appendChild(rows[0]);
+        rowsThatFit = 1;
+      }
+    }
+
+    // Safety guard against runaway pagination
+    if (pages.length >= 25) {
+      return;
+    }
+
     // Remaining rows need to continue onto the next page
     const remainingRows = rows.slice(rowsThatFit);
 
@@ -1030,7 +1047,10 @@ export async function generateForensicPDF(
 
   // Render to Canvas and PDF using jsPDF
   try {
-    await document.fonts.ready;
+    await Promise.race([
+      document.fonts.ready,
+      new Promise((resolve) => setTimeout(resolve, 800)),
+    ]);
     const pdf = new jsPDF({
       orientation: "portrait",
       unit: "mm",
@@ -1041,10 +1061,12 @@ export async function generateForensicPDF(
     for (let i = 0; i < pages.length; i++) {
       const pageEl = pages[i].page;
       const canvas = await html2canvas(pageEl, {
-        scale: 2,
+        scale: 1.5,
         useCORS: true,
+        allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false,
+        imageTimeout: 2000,
         windowWidth: 794,
         windowHeight: 1123,
       });
@@ -1052,7 +1074,7 @@ export async function generateForensicPDF(
       if (i > 0) {
         pdf.addPage("a4", "portrait");
       }
-      pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.90), "JPEG", 0, 0, 210, 297, undefined, "FAST");
     }
 
     const safeName = (activeCase.name || "forensic_report").replace(/[^\w.-]+/g, "_");

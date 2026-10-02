@@ -88,4 +88,30 @@ html, body {
   background-color: #090909;
   color: #FFFFFF;
   font-family: "Inter", "IBM Plex Sans", sans-serif;
+  color-scheme: dark;
+}
+
+/* Global Custom Sleek Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #090909;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 4px;
+  border: 1px solid #141414;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #16ff4d;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #262626 #090909;
 }

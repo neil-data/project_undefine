@@ -274,12 +274,16 @@ export function AiReportsTab({ activeCase, examiner }: AiReportsTabProps) {
     setExportDone(false);
     setExportError("");
     try {
-      // The browser shapes Gujarati before jsPDF embeds the rendered pages.
-      await generateForensicPDF(activeCase, examiner, language);
+      const exportTask = generateForensicPDF(activeCase, examiner, language);
+      const timeoutTask = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("PDF compilation timed out. Please try again.")), 30000)
+      );
+      await Promise.race([exportTask, timeoutTask]);
       setExportDone(true);
       setTimeout(() => setExportDone(false), 2500);
-    } catch {
-      setExportError("Failed to generate PDF report. Please try again.");
+    } catch (err: any) {
+      console.error("PDF export error:", err);
+      setExportError(err?.message || "Failed to generate PDF report. Please try again.");
     } finally {
       setIsExporting(false);
     }
