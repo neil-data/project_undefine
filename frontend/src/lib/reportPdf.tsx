@@ -2,6 +2,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import type { ThreatCase } from "../components/dashboard/types";
 import type { CurrentUser } from "./api";
+import { LOGO_DATA_URI } from "./logoBase64";
 
 type Language = "en" | "gu";
 
@@ -385,8 +386,11 @@ export async function generateForensicPDF(
   const iocs = activeCase.iocIntelligence ?? [];
 
   // Prepare CSS Stylesheet — natural document flow, comfortable spacing, no forced overflow
+  const fontFaceCss = language === "gu"
+    ? "@font-face { font-family: NotoGujarati; src: url('/fonts/NotoSansGujarati-Regular.ttf') format('truetype'); }"
+    : "";
   const css = `
-    @font-face { font-family: NotoGujarati; src: url('/fonts/NotoSansGujarati-Regular.ttf') format('truetype'); }
+    ${fontFaceCss}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     
     .report-container {
@@ -634,7 +638,7 @@ export async function generateForensicPDF(
   contentUnits.push(`
     <div>
       <div class="header">
-        <img class="logo" src="/logo.jpeg" alt="E-Rakshak" onerror="this.remove()">
+        <img class="logo" src="${LOGO_DATA_URI}" alt="E-Rakshak">
         <div>
           <h1>${t.title}</h1>
           <div style="font-size:12px;font-weight:bold;color:#173b68;margin-top:2px;">Gujarat Police Cyber Cell / E-Rakshak</div>
@@ -1060,16 +1064,21 @@ export async function generateForensicPDF(
 
     for (let i = 0; i < pages.length; i++) {
       const pageEl = pages[i].page;
-      const canvas = await html2canvas(pageEl, {
-        scale: 1.5,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-        imageTimeout: 2000,
-        windowWidth: 794,
-        windowHeight: 1123,
-      });
+      const canvas = await Promise.race([
+        html2canvas(pageEl, {
+          scale: 1.5,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: "#ffffff",
+          logging: false,
+          imageTimeout: 1500,
+          windowWidth: 794,
+          windowHeight: 1123,
+        }),
+        new Promise<HTMLCanvasElement>((_, reject) =>
+          setTimeout(() => reject(new Error("Page render timed out")), 7000)
+        ),
+      ]);
 
       if (i > 0) {
         pdf.addPage("a4", "portrait");
