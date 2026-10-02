@@ -67,11 +67,16 @@ def _build_findings_text(
     return "\n".join(lines)
 
 
-FORBIDDEN_UNGROUNDED_TERMS = ("systemd", "rc.local", "pkexec", "xor", "named pipe")
+FORBIDDEN_UNGROUNDED_TERMS = (
+    "systemd", "rc.local", "pkexec", "xor", "named pipe",
+    "strace", "ltrace", "gdb", "cve-2022-0847", "cve-",
+    "/usr/lib/.x11-auth", "@reboot", "/etc/shadow",
+)
 
 
 def _is_grounded(text: str, static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> bool:
     """Check if any forbidden specific technical term is mentioned without raw evidence."""
+    import re
     lowered = text.lower()
     raw_evidence_corpus = []
 
@@ -98,7 +103,49 @@ def _is_grounded(text: str, static: StaticAnalysisOutput, dynamic: Optional[Dyna
     for term in FORBIDDEN_UNGROUNDED_TERMS:
         if term in lowered and term not in raw_text:
             return False
+
+    # Check for direct contradiction on outbound network connections
+    has_dynamic_conns = dynamic and len(dynamic.network_connections) > 0
+    if has_dynamic_conns:
+        if any(phrase in lowered for phrase in ("no outbound network", "does not make outbound", "no network connections")):
+            return False
+
     return True
+
+
+def _clean_or_render_text(raw_text: str) -> str:
+    """Clean model output, parsing JSON if present and ensuring clean table markdown."""
+    import json
+    text = raw_text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = text.strip()
+
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and "executive_summary" in parsed:
+            summary = parsed["executive_summary"].strip()
+            steps = parsed.get("technical_steps") or []
+            if steps and isinstance(steps, list):
+                table_lines = ["\n\n| Step | Action | Evidence |", "|:---|:---|:---|"]
+                for s in steps:
+                    if isinstance(s, dict):
+                        st = str(s.get("step", "")).replace("|", "/").strip()
+                        act = str(s.get("action", "")).replace("|", "/").replace("\n", " ").strip()
+                        ev = str(s.get("evidence", "")).replace("|", "/").replace("\n", " ").strip()
+                        table_lines.append(f"| {st} | {act} | {ev} |")
+                summary += "\n" + "\n".join(table_lines)
+            return summary
+    except Exception:
+        pass
+
+    # Ensure no raw literal <br> or broken table artifacts
+    cleaned = raw_text.replace("<br>", " ").replace("<br/>", " ")
+    return cleaned
 
 
 def _fallback_summary(
@@ -106,13 +153,15 @@ def _fallback_summary(
     capabilities: list[CapabilityTag],
     risk_score: int,
     dynamic: Optional[DynamicAnalysisOutput] = None,
+    victim_impact: Optional[str] = "medium",
 ) -> str:
     caps = [c.capability.replace("_", " ") for c in capabilities]
-    cap_text = " and ".join(caps) if caps else "no confirmed malicious capability"
+    cap_text = ", ".join(caps) if caps else "no confirmed malicious capability tags"
+    v_imp = victim_impact or "medium"
     return (
-        f"[FALLBACK — GROQ_API_KEY not set] This sample shows signs of {cap_text}. "
-        f"Risk score: {risk_score}/100. Set GROQ_API_KEY in .env for a real "
-        f"plain-language narrative."
+        f"[FALLBACK] This {static.platform} {static.file_type} binary exhibits {cap_text}. "
+        f"Verified risk score is {risk_score}/100 with {v_imp} victim impact based on verified forensic indicators. "
+        f"Immediate containment and perimeter network monitoring are advised."
     )
 
 
@@ -122,18 +171,24 @@ def generate_narrative(
     mitre: list[MitreTechnique],
     capabilities: list[CapabilityTag],
     risk_score: int,
+    victim_impact: Optional[str] = None,
+    malware_bazaar: Optional[dict] = None,
 ) -> str:
     api_key = os.environ.get("GROQ_API_KEY")
 
     if not api_key:
-        return _fallback_summary(static, capabilities, risk_score, dynamic)
+        return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact)
 
     try:
         from groq import Groq
     except ImportError:
-        return _fallback_summary(static, capabilities, risk_score, dynamic) + " (groq package not installed)"
+        return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact) + " (groq package not installed)"
 
     findings = _build_findings_text(static, dynamic, mitre, capabilities, risk_score)
+    if victim_impact:
+        findings += f"\nAssessed victim impact: {victim_impact}"
+    if malware_bazaar and malware_bazaar.get("signature"):
+        findings += f"\nMalwareBazaar intelligence: Confirmed {malware_bazaar.get('signature')} family"
 
     try:
         client = Groq(api_key=api_key)
@@ -144,8 +199,12 @@ def generate_narrative(
             SYSTEM_PROMPT +
             f"\nStrict Constraints:\n"
             f"- The verified risk score is {risk_score}/100. Do NOT contradict or alter this score.\n"
+            f"- The determined victim impact is '{victim_impact or 'medium'}'. State this impact accurately and do NOT state a different impact level.\n"
             f"- If network connections or C2 are listed in findings, state them accurately; do NOT claim the file makes no outbound connections.\n"
+            f"- If no network connections are observed, do NOT invent any.\n"
             f"- ONLY state technical mechanisms (cron, shell, files) if explicitly listed in the findings.\n"
+            f"- Forbidden ungrounded terms: do NOT mention systemd, rc.local, pkexec, xor, named pipe, strace, ltrace, gdb, CVE-2022-0847, /usr/lib/.X11-auth, @reboot, /etc/shadow unless in findings.\n"
+            f"- Optional JSON output format: {{\"executive_summary\": \"...\", \"technical_steps\": [{{\"step\": \"1\", \"action\": \"...\", \"evidence\": \"...\"}}]}}\n"
         )
 
         last_err = None
@@ -161,21 +220,22 @@ def generate_narrative(
                         {"role": "user", "content": f"Findings:\n{findings}\n\nWrite the summary now."},
                     ],
                     temperature=0.2,
-                    max_tokens=300,
+                    max_tokens=400,
                     timeout=15,
                 )
                 text = response.choices[0].message.content.strip()
 
                 # Validate against hallucinated ungrounded terms
                 if _is_grounded(text, static, dynamic):
-                    return text
+                    return _clean_or_render_text(text)
 
                 # Attempt 2: Retry with explicit grounding correction
                 correction_prompt = (
                     f"Findings:\n{findings}\n\n"
-                    f"Correction: Your previous summary contained technical mechanisms not present in the findings. "
+                    f"Correction: Your previous summary contained technical mechanisms or contradictions not present in the findings. "
                     f"You must strictly ground your summary ONLY in the evidence provided above. "
-                    f"Do not mention systemd, rc.local, pkexec, xor, or named pipes unless listed in findings. "
+                    f"Risk score is {risk_score}/100, victim impact is {victim_impact or 'medium'}. "
+                    f"Do not mention systemd, rc.local, pkexec, xor, named pipes, strace, ltrace, gdb, CVE-2022-0847, or /usr/lib/.X11-auth. "
                     f"Write the corrected summary now."
                 )
                 retry_resp = client.chat.completions.create(
@@ -185,20 +245,15 @@ def generate_narrative(
                         {"role": "user", "content": correction_prompt},
                     ],
                     temperature=0.1,
-                    max_tokens=300,
+                    max_tokens=400,
                     timeout=15,
                 )
                 retry_text = retry_resp.choices[0].message.content.strip()
                 if _is_grounded(retry_text, static, dynamic):
-                    return retry_text
+                    return _clean_or_render_text(retry_text)
 
                 # Ungrounded after retry -> use deterministic template fallback
-                caps_str = ", ".join(c.capability.replace("_", " ") for c in capabilities) or "suspicious characteristics"
-                return (
-                    f"This {static.platform} {static.file_type} binary exhibits {caps_str}. "
-                    f"Calculated risk score is {risk_score}/100 based on verified static heuristics and behavioral patterns. "
-                    f"Immediate containment and perimeter network monitoring are advised."
-                )
+                return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact)
 
             except Exception as ex:
                 last_err = ex
@@ -208,7 +263,7 @@ def generate_narrative(
 
         if last_err:
             raise last_err
-        return _fallback_summary(static, capabilities, risk_score, dynamic)
+        return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact)
     except Exception as e:
-        return _fallback_summary(static, capabilities, risk_score, dynamic) + f" (Groq call failed: {e})"
+        return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact) + f" (Groq call failed: {e})"
 

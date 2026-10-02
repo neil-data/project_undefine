@@ -313,8 +313,15 @@ export async function generateForensicPDF(
         `<div style="background:#fffbe6;border:1px solid #ffe58f;color:#d48806;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:9.5px;font-weight:bold;">⚠️ DYNAMIC RESULTS ARE SIMULATED; NOT OBSERVED BEHAVIOR (HEURISTIC SIMULATION).</div>`
       );
     }
+    if (d.dynamic_status === "failed") {
+      dynRows.push(
+        `<div style="background:#fff1f0;border:1px solid #ffa39e;color:#cf1322;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:9.5px;font-weight:bold;">❌ Dynamic analysis failed: ${escapeHtml(d.failure_reason || d.details || d.message || "Detonation error")}</div>`
+      );
+    }
     dynRows.push(`<b>${t.status}:</b> ${escapeHtml(value(d.status, unavailable))}${isSim ? " (SIMULATED)" : ""}`);
     dynRows.push(`<b>Execution mode:</b> ${isSim ? "Simulated Heuristic" : "Real Detonation"}`);
+    const realAvailable = d.real_sandbox_available ?? (d.execution_mode === "real");
+    dynRows.push(`<b>Real sandbox available:</b> ${realAvailable ? t.yes : t.no}`);
     dynRows.push(`<b>${t.available}:</b> ${escapeHtml(yesNo(d.available))}`);
     if (d.target_architecture) dynRows.push(`<b>Architecture:</b> ${escapeHtml(d.target_architecture)}`);
     const dynMessage = value(d.message ?? d.details, "");
@@ -672,6 +679,7 @@ export async function generateForensicPDF(
       </div>
       <div class="card hash" style="margin-top:5px;">
         <b>SHA-256:</b> ${escapeHtml(activeCase.sha256 || activeCase.hash)}<br>
+        ${(activeCase as any).unpacked_sha256 || (activeCase.packing as any)?.unpacked_sha256 ? `<b>Unpacked SHA-256:</b> ${escapeHtml((activeCase as any).unpacked_sha256 || (activeCase.packing as any)?.unpacked_sha256)}<br>` : ""}
         <b>MD5:</b> ${escapeHtml(value(activeCase.md5, unavailable))}<br>
         <b>SHA-1:</b> ${escapeHtml(value(activeCase.sha1, unavailable))}
       </div>

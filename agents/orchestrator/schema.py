@@ -87,6 +87,8 @@ class DynamicAnalysisOutput(BaseModel):
     execution_mode: Literal["real", "simulated"] = "simulated"
     available: bool = True
     status: Optional[str] = "completed"
+    dynamic_status: Optional[str] = "completed"  # "completed" | "failed" | "unavailable" | "no_behavior_observed"
+    failure_reason: Optional[str] = None
     task_id: Optional[str] = None
     sandbox_url: Optional[str] = None
     message: Optional[str] = None
@@ -120,6 +122,7 @@ class CapabilityTag(BaseModel):
     capability: str          # e.g. "sms_otp_theft", "keylogging", "gps_tracking"
     confidence: float
     evidence: list[str] = Field(default_factory=list)
+    evidence_state: Optional[Literal["observed", "simulated", "static", "intel"]] = "static"
 
 
 class OrchestratorState(TypedDict, total=False):
@@ -128,11 +131,15 @@ class OrchestratorState(TypedDict, total=False):
     dict as the graph executes.
     """
     sample_id: str
+    task_id: Optional[str]
     static_output: Optional[StaticAnalysisOutput]
     dynamic_output: Optional[DynamicAnalysisOutput]
     mitre_techniques: list[MitreTechnique]
     capability_tags: list[CapabilityTag]
     risk_score: Optional[int]
+    intel_floor: Optional[int]
+    victim_impact: Optional[str]
+    malware_bazaar: Optional[dict]
     narrative_summary: Optional[str]
     # Phase 10: Investigation Engine
     investigation_output: Optional[dict]

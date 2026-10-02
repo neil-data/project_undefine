@@ -165,8 +165,34 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
         mitre=state.get("mitre_techniques", []),
         capabilities=state.get("capability_tags", []),
     )
-    print(f"[compute_risk_score] Risk score: {score}/100")
-    return {**state, "risk_score": score}
+    # Apply intel floor if provided or from MalwareBazaar
+    intel_floor = state.get("intel_floor")
+    mb = state.get("malware_bazaar")
+    if intel_floor:
+        score = max(score, intel_floor)
+    elif mb and mb.get("signature"):
+        score = max(score, 85)
+
+    # Compute victim impact deterministically from score, capabilities, and observed evidence
+    dynamic = state.get("dynamic_output")
+    is_simulated = getattr(dynamic, "execution_mode", "simulated") == "simulated" if dynamic else True
+    has_c2_observed = False
+    has_compromise_observed = False
+    if dynamic and not is_simulated:
+        has_c2_observed = any(bool(c.get("flagged_c2")) for c in getattr(dynamic, "network_connections", []))
+        has_compromise_observed = any("system compromise" in str(p).lower() or "persistence" in str(p).lower() for p in getattr(dynamic, "persistence_artifacts", []))
+
+    if score >= 85 and (has_c2_observed or has_compromise_observed):
+        victim_impact = "critical"
+    elif score >= 70:
+        victim_impact = "high"
+    elif score >= 40:
+        victim_impact = "medium"
+    else:
+        victim_impact = "low"
+
+    print(f"[compute_risk_score] Unified risk score: {score}/100, victim_impact: {victim_impact}")
+    return {**state, "risk_score": score, "victim_impact": victim_impact}
 
 
 def narrative_agent(state: OrchestratorState) -> OrchestratorState:
@@ -177,6 +203,8 @@ def narrative_agent(state: OrchestratorState) -> OrchestratorState:
         mitre=state.get("mitre_techniques", []),
         capabilities=state.get("capability_tags", []),
         risk_score=state.get("risk_score", 0),
+        victim_impact=state.get("victim_impact"),
+        malware_bazaar=state.get("malware_bazaar"),
     )
     print(f"[narrative_agent] {summary}")
     return {**state, "narrative_summary": summary}
@@ -194,11 +222,15 @@ def investigation_engine(state: OrchestratorState) -> OrchestratorState:
     # Convert orchestrator state to investigation state
     investigation_state = {
         "sample_id": state.get("sample_id", "unknown"),
+        "task_id": state.get("task_id"),
         "static_output": state.get("static_output").model_dump() if state.get("static_output") else None,
         "dynamic_output": state.get("dynamic_output").model_dump() if state.get("dynamic_output") else None,
         "mitre_techniques": [t.model_dump() for t in state.get("mitre_techniques", [])],
         "capability_tags": [c.model_dump() for c in state.get("capability_tags", [])],
         "risk_score": state.get("risk_score", 0),
+        "intel_floor": state.get("intel_floor"),
+        "victim_impact": state.get("victim_impact"),
+        "malware_bazaar": state.get("malware_bazaar"),
         "narrative_summary": state.get("narrative_summary"),
     }
     

@@ -143,6 +143,16 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
         </div>
       )}
 
+      {/* Failure Banner when dynamic status is failed */}
+      {dyn?.dynamic_status === "failed" && (
+        <div className="bg-[#ff4040]/10 border border-[#ff4040]/30 rounded-lg p-3 text-[#ff4040] text-xs flex items-center gap-2.5 font-mono">
+          <ShieldAlert className="w-4 h-4 shrink-0 text-[#ff4040]" />
+          <div>
+            <span className="font-bold uppercase tracking-wider">Execution Failure:</span> Dynamic analysis failed: {dyn.failure_reason || dyn.message || "Unknown error during detonation."}
+          </div>
+        </div>
+      )}
+
       {/* Main Sandbox Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
@@ -223,6 +233,11 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
             </span>
             <div className="space-y-2 text-[#A0A0A0]">
               <p><span className="text-white font-bold">STATE:</span> <span className="text-[#16ff4d]">{status.toUpperCase()}</span></p>
+              <p><span className="text-white font-bold">MODE:</span> <span className="text-white">{dyn?.execution_mode === "simulated" ? "Simulated Heuristic" : "Real Detonation"}</span></p>
+              <p><span className="text-white font-bold">REAL SANDBOX:</span> <span className="text-white">{(dyn?.real_sandbox_available ?? (dyn?.execution_mode === "real")) ? "Yes" : "No"}</span></p>
+              {dyn?.target_architecture && (
+                <p><span className="text-white font-bold">ARCH:</span> <span className="text-white">{dyn.target_architecture}</span></p>
+              )}
               {dyn?.duration_seconds !== undefined && (
                 <p><span className="text-white font-bold">DURATION:</span> {dyn.duration_seconds}s</p>
               )}

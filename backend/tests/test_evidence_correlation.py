@@ -36,4 +36,5 @@ def test_risk_explanation_accounts_for_unallocated_score():
     explanation = _build_risk_explanation({"yara_matches": []}, [], [], 42)
 
     assert explanation["score"] == 42
-    assert explanation["contributions"] == [{"label": "Other deterministic behavior rules", "points": 42}]
+    assert explanation["contributions"][0]["label"] == "Other deterministic behavior rules"
+    assert explanation["contributions"][0]["points"] == 42

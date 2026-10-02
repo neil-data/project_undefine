@@ -114,6 +114,31 @@ class ElfParser:
         sections = tuple(
             self._decorate_section(data, name, raw) for name, raw in self._named_sections(raw_sections, shstrtab)
         )
+        if not sections and program_headers:
+            synthetic_sections = []
+            for i, ph in enumerate(program_headers):
+                if ph.type == "load":
+                    blob = data[ph.offset : min(len(data), ph.offset + ph.filesz)]
+                    entropy = self._entropy(blob)
+                    synthetic_sections.append(
+                        ElfSection(
+                            name=f"PT_LOAD_{i}",
+                            type="progbits",
+                            flags=ph.flags,
+                            address=ph.vaddr,
+                            offset=ph.offset,
+                            size=ph.filesz,
+                            link=0,
+                            info=0,
+                            addralign=ph.align,
+                            entsize=0,
+                            entropy=entropy,
+                            executable=ph.executable,
+                            writable=ph.writable,
+                            suspicious=False,
+                        )
+                    )
+            sections = tuple(synthetic_sections)
         by_name = {section.name: section for section in sections}
 
         symbols = self._symbols(data, endian, is64, by_name.get(".symtab"), by_name.get(".strtab"))

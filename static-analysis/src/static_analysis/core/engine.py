@@ -239,6 +239,13 @@ class StaticAnalysisEngine:
         # is_packed=False without attempting to unpack anything).
         packing_report = self._analyze_packing(source, format_details, _depth)
 
+        # Flag stripped/packed binary with low plaintext strings (< 10)
+        if len(extracted_strings) < 10:
+            evidence = list(packing_report.get("evidence", []))
+            if "Binary stripped or packed (low plaintext strings)" not in evidence:
+                evidence.append("Binary stripped or packed (low plaintext strings)")
+                packing_report["evidence"] = evidence
+
         # Step 8: Threat Signature Matching
         yara_matches = []
         for match in combined_matches:
@@ -347,6 +354,7 @@ class StaticAnalysisEngine:
             "file_name": source.name,
             "platform": platform,
             "file_type": file_type_str,
+            "architecture": format_details.get("architecture") if isinstance(format_details, dict) else None,
             "file_size_bytes": metadata.file_size if metadata else source.stat().st_size,
             "submitted_at": datetime.now(timezone.utc).isoformat(),
             "yara_matches": yara_matches,

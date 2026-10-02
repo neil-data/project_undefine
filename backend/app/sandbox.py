@@ -93,6 +93,7 @@ async def run_dynamic_analysis(
     file_type: Optional[str] = None,
     static_data: Optional[dict] = None,
     malware_bazaar: Optional[dict] = None,
+    target_architecture: Optional[str] = None,
 ) -> DynamicAnalysisOutput:
     """
     Return dynamic-analysis state for a sample.
@@ -108,7 +109,7 @@ async def run_dynamic_analysis(
     else:
         file_type = str(file_type).lower()
 
-    target_arch = inspect_binary_architecture(sample_path)
+    target_arch = target_architecture or inspect_binary_architecture(sample_path)
     url = sandbox_url()
 
     # ── REMOTE SANDBOX PATH (REAL DETONATION) ─────────────────────────────────
@@ -133,13 +134,15 @@ async def run_dynamic_analysis(
                         response = await client.post(f"{url.rstrip('/')}/api/tasks/create/", data=data, files=files)
                         response.raise_for_status()
                         payload = response.json()
-                    except Exception:
+                    except Exception as sub_err:
                         _LOGGER.exception("Sandbox submission to %s failed", url)
                         return DynamicAnalysisOutput(
                             sample_id=file_name,
                             available=True,
                             execution_mode="real",
                             status="failed",
+                            dynamic_status="failed",
+                            failure_reason=f"Sandbox did not accept sample: {sub_err}",
                             message="Dynamic analysis submission failed — sandbox did not accept the sample.",
                             target_architecture=target_arch,
                         )
@@ -150,7 +153,8 @@ async def run_dynamic_analysis(
                 available=True,
                 execution_mode="real",
                 status="submitted",
-                task_id=task_id,
+                dynamic_status="completed",
+                task_id=str(task_id) if task_id else None,
                 sandbox_url=url,
                 target_architecture=target_arch,
                 message="Dynamic analysis submitted to sandbox. Results will appear when detonation completes.",
@@ -161,16 +165,20 @@ async def run_dynamic_analysis(
                 available=True,
                 execution_mode="real",
                 status="failed",
+                dynamic_status="unavailable",
+                failure_reason="httpx client not installed",
                 target_architecture=target_arch,
                 message="Dynamic analysis unavailable — httpx client not installed.",
             )
-        except Exception:
+        except Exception as exc:
             _LOGGER.exception("Sandbox integration error")
             return DynamicAnalysisOutput(
                 sample_id=file_name,
                 available=True,
                 execution_mode="real",
                 status="failed",
+                dynamic_status="failed",
+                failure_reason=str(exc),
                 target_architecture=target_arch,
                 message="Dynamic analysis unavailable — sandbox integration error.",
             )
@@ -200,7 +208,9 @@ async def run_dynamic_analysis(
             sample_id=file_name,
             available=True,
             execution_mode="simulated",
-            status="no_behavior_observed",
+            status="completed",
+            dynamic_status="no_behavior_observed",
+            failure_reason=None,
             message=f"No behavior observed (simulated). Target architecture: {target_arch}. Static inspection identified no malicious triggers.",
             task_id=f"sim-clean-{file_name[:16]}",
             sandbox_url=f"simulated://isolated-{platform or 'native'}-sandbox",
@@ -278,7 +288,6 @@ async def run_dynamic_analysis(
                 "process_name": "crontab",
                 "cmdline": cmdline,
             })
-            files_written.extend([PERSISTENCE_PAYLOAD_PATH, PERSISTENCE_CRON_PATH])
             persistence_artifacts.append(f"Cron persistence installed: {PERSISTENCE_CRON_PATH}")
 
     # Windows / PE heuristics from sample evidence
@@ -312,6 +321,8 @@ async def run_dynamic_analysis(
         available=True,
         execution_mode="simulated",
         status="completed",
+        dynamic_status="completed",
+        failure_reason=None,
         message=f"Detonation simulated from static observables (Target Architecture: {target_arch}).",
         task_id=f"sim-{platform or 'native'}-{file_name[:16]}",
         sandbox_url=f"simulated://isolated-{platform or 'native'}-sandbox",

@@ -17,6 +17,7 @@ import logging
 import re
 import json
 import struct
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -121,6 +122,9 @@ def _is_valid_ipv4(val: str, allow_private: bool = False) -> bool:
             return False
         if not allow_private and ip.is_private:
             return False
+        # Reject internal sandbox bridge networks (QEMU/libvirt/INetSim)
+        if val.startswith("10.0.2.") or val.startswith("192.168.100.") or val.startswith("192.168.122.") or val.startswith("127."):
+            return False
         if val.startswith("0.") or val == "255.255.255.255":
             return False
         oids = ("1.3.6.1", "1.2.840", "2.16.840", "2.5.4", "0.9.2342", "1.3.14.3")
@@ -150,7 +154,9 @@ def _is_valid_domain(val: str) -> bool:
             return False
         if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", part):
             return False
-    if clean in ("localhost", "example.com", "test.com"):
+    if clean in ("localhost", "example.com", "test.com", "a.out", "ldr", "classes.dexpk", "classes.dex"):
+        return False
+    if "dex" in clean and clean.endswith("pk"):
         return False
     return True
 
@@ -533,9 +539,9 @@ def _build_risk_explanation(
 ) -> dict:
     yara_matches = static_output.get("yara_matches", []) if isinstance(static_output, dict) else static_output.yara_matches
     parts = [
-        {"label": "YARA detections", "points": len(yara_matches) * 15},
-        {"label": "MITRE techniques", "points": len(mitre_techniques) * 8},
-        {"label": "Capability evidence", "points": sum(int((c.get('confidence', 0) if isinstance(c, dict) else getattr(c, 'confidence', 0)) * 15) for c in capability_tags)},
+        {"rule": "yara", "label": "YARA detections", "points": len(yara_matches) * 15, "kind": "rule"},
+        {"rule": "mitre", "label": "MITRE techniques", "points": len(mitre_techniques) * 8, "kind": "rule"},
+        {"rule": "capabilities", "label": "Capability evidence", "points": sum(int((c.get('confidence', 0) if isinstance(c, dict) else getattr(c, 'confidence', 0)) * 15) for c in capability_tags), "kind": "rule"},
     ]
     rule_explained = sum(item["points"] for item in parts)
 
@@ -545,14 +551,18 @@ def _build_risk_explanation(
     if intel_sig and risk_score > rule_explained:
         diff = risk_score - rule_explained
         parts.append({
-            "label": f"MalwareBazaar intelligence floor (known family: {intel_sig})",
+            "rule": "intel_floor",
+            "label": f"Threat intelligence floor (MalwareBazaar intelligence floor - {intel_sig}): high-confidence known malware signature (raised to {risk_score})",
             "points": diff,
+            "kind": "intel_floor",
         })
         intel_floor_applied = True
     elif risk_score > rule_explained:
         parts.append({
+            "rule": "deterministic_heuristics",
             "label": "Other deterministic behavior rules",
             "points": risk_score - rule_explained,
+            "kind": "rule",
         })
 
     result = {
@@ -561,7 +571,7 @@ def _build_risk_explanation(
         "method": "Deterministic weighted risk scoring",
     }
     if intel_floor_applied:
-        result["intel_floor_note"] = f"Score floor raised to 85 by MalwareBazaar match (known family: {intel_sig})"
+        result["intel_floor_note"] = f"Score floor raised to {risk_score} by MalwareBazaar match (known family: {intel_sig})"
     return result
 
 
@@ -650,9 +660,16 @@ def _build_threat_assessment(
                 if v_low not in ("clean", "unrated", "benign"):
                     agreeing += 1
 
+    mb_sig = (malware_bazaar or {}).get("signature") if malware_bazaar else None
+    if mb_sig:
+        counted.append("MalwareBazaar")
+        agreeing += 1
+
     if counted:
         computed_conf = max(50, round(95 * (agreeing / len(counted))))
-    elif malware_bazaar and malware_bazaar.get("signature"):
+        if agreeing < len(counted):
+            key_findings.append(f"Vendor disagreement observed ({agreeing}/{len(counted)} agree)")
+    elif mb_sig:
         computed_conf = 75
     else:
         computed_conf = confidence_from_signals(len(yara_matches), len(mitre_techniques), has_dynamic)
@@ -674,6 +691,7 @@ def _generate_recommendations(
     network_indicators: dict,
     dynamic_output: Optional[dict] = None,
     existing_recommendations: Optional[list] = None,
+    platform: Optional[str] = None,
 ) -> list[str]:
     """
     Synthesizes actionable, evidence-based recommendations for incident responders.
@@ -719,7 +737,13 @@ def _generate_recommendations(
     # 2. Urgent Containment & Host Isolation based on Verdict & Risk Score
     if risk_score >= 70 or verdict == "MALICIOUS":
         add_rec("Isolate infected endpoint(s) from the internal network immediately to halt command-and-control communication and lateral propagation.")
-        add_rec("Revoke all active session tokens, OAuth grants, and stored credentials accessed from this endpoint.")
+        plat_lower = str(platform or "").lower()
+        if plat_lower == "android":
+            add_rec("Revoke all active session tokens, OAuth grants, and mobile device credentials.")
+        elif plat_lower in ("windows", "pe", "exe"):
+            add_rec("Revoke all active session tokens, Kerberos tickets, and stored credentials accessed from this endpoint.")
+        else:
+            add_rec("Revoke active SSH keys, local session credentials, and user tokens accessed from this endpoint.")
     elif risk_score >= 30 or verdict == "SUSPICIOUS":
         add_rec("Quarantine the suspicious binary artifact and initiate continuous monitoring on host and perimeter network interfaces.")
 
@@ -819,6 +843,7 @@ def _build_ai_analysis(
         network_indicators=network_indicators,
         dynamic_output=dyn_dict,
         existing_recommendations=extracted_recs,
+        platform=final_state.get("platform") or (final_state.get("static_output").platform if final_state.get("static_output") else None),
     )
 
     # Network interpretation (from real indicators only)
@@ -1028,9 +1053,29 @@ async def analyze_and_save(
                 or data.get("sha256")
                 or compute_sha256(file_path)
             )
+            sha256_val = static_part.get("sha256") or sample_id
+
+            # Query MalwareBazaar threat intelligence first
+            mb_data = None
+            try:
+                mb_data = await malware_bazaar.lookup_hash(sha256_val)
+                if not mb_data and data.get("md5"):
+                    mb_data = await malware_bazaar.lookup_hash(data["md5"])
+            except Exception as e:
+                _LOGGER.warning(f"MalwareBazaar lookup failed: {e}")
+
+            if mb_data and mb_data.get("found"):
+                for yrule in (mb_data.get("yara_rules") or []):
+                    yara_objs.append(YaraMatch(
+                        rule_name=f"[MalwareBazaar] {yrule.get('rule_name', 'Community_Yara')}",
+                        category="threat_intel",
+                        severity="high",
+                        description=yrule.get("description") or f"Community YARA match from MalwareBazaar (Author: {yrule.get('author', 'abuse.ch')})",
+                    ))
+
             static_output = StaticAnalysisOutput(
                 sample_id=sample_id,
-                sha256=static_part.get("sha256") or sample_id,
+                sha256=sha256_val,
                 platform=static_part.get("platform") or "windows",
                 file_type=static_part.get("file_type") or "exe",
                 file_size_bytes=static_part.get("file_size_bytes") or file_path.stat().st_size,
@@ -1041,11 +1086,14 @@ async def analyze_and_save(
                 extracted_strings=extracted_strings,
             )
 
+            task_id = (dynamic_part or {}).get("task_id") or str(uuid.uuid4())
             dyn_obj = None
             if dynamic_part:
                 dyn_obj = DynamicAnalysisOutput(
                     sample_id=sample_id,
                     execution_mode=dynamic_part.get("execution_mode", "simulated"),
+                    dynamic_status=dynamic_part.get("dynamic_status") or dynamic_part.get("status", "completed"),
+                    failure_reason=dynamic_part.get("failure_reason"),
                     status=dynamic_part.get("status", "completed"),
                     message=dynamic_part.get("message"),
                     target_architecture=dynamic_part.get("target_architecture"),
@@ -1058,11 +1106,22 @@ async def analyze_and_save(
                     registry_changes=dynamic_part.get("registry_changes") or [],
                     persistence_artifacts=dynamic_part.get("persistence_artifacts") or [],
                     c2_endpoints_detected=dynamic_part.get("c2_endpoints_detected") or [],
+                    task_id=task_id,
                 )
 
-            # Run orchestrator graph (CPU-bound → thread)
-            initial_state = {"static_output": static_output, "dynamic_output": dyn_obj}
+            # Run orchestrator graph with MB intel and intel_floor (CPU-bound → thread)
+            intel_floor = 85 if (mb_data and mb_data.get("signature")) else None
+            initial_state = {
+                "static_output": static_output,
+                "dynamic_output": dyn_obj,
+                "malware_bazaar": mb_data,
+                "intel_floor": intel_floor,
+                "task_id": task_id,
+            }
             final_state = await asyncio.to_thread(_graph.invoke, initial_state)
+
+            if intel_floor:
+                final_state["risk_score"] = max(final_state.get("risk_score", 0), intel_floor)
 
             # Reconstruct raw_static dict for network indicator extraction
             raw_static_dict = {
@@ -1079,26 +1138,6 @@ async def analyze_and_save(
                 },
                 "explained_strings": data.get("explained_strings") or [],
             }
-
-            # Query MalwareBazaar threat intelligence
-            mb_data = None
-            try:
-                mb_data = await malware_bazaar.lookup_hash(static_output.sha256)
-                if not mb_data and data.get("md5"):
-                    mb_data = await malware_bazaar.lookup_hash(data["md5"])
-            except Exception as e:
-                _LOGGER.warning(f"MalwareBazaar lookup failed: {e}")
-
-            if mb_data and mb_data.get("found"):
-                for yrule in (mb_data.get("yara_rules") or []):
-                    raw_static_dict["yara_matches"].append({
-                        "rule_name": f"[MalwareBazaar] {yrule.get('rule_name', 'Community_Yara')}",
-                        "category": "threat_intel",
-                        "severity": "high",
-                        "description": yrule.get("description") or f"Community YARA match from MalwareBazaar (Author: {yrule.get('author', 'abuse.ch')})",
-                    })
-                if mb_data.get("signature"):
-                    final_state["risk_score"] = max(final_state.get("risk_score", 0), 85)
 
             # Network indicators from static + dynamic
             network_indicators = _extract_network_indicators(raw_static_dict, dynamic_part)
@@ -1133,10 +1172,14 @@ async def analyze_and_save(
             if dynamic_part:
                 dynamic_analysis_result: Optional[dict] = {
                     "available": True,
+                    "execution_mode": dynamic_part.get("execution_mode", "simulated"),
+                    "dynamic_status": dynamic_part.get("dynamic_status") or dynamic_part.get("status", "completed"),
+                    "failure_reason": dynamic_part.get("failure_reason"),
                     "status": dynamic_part.get("status") or "completed",
                     "message": dynamic_part.get("message") or dynamic_part.get("details"),
-                    "task_id": dynamic_part.get("task_id") or dynamic_part.get("sample_id"),
+                    "task_id": task_id,
                     "sandbox_url": dynamic_part.get("sandbox_url"),
+                    "target_architecture": dynamic_part.get("target_architecture"),
                     # Preserve full sandbox data for PDF rendering
                     "network_connections": dynamic_part.get("network_connections") or [],
                     "c2_endpoints_detected": dynamic_part.get("c2_endpoints_detected") or [],
@@ -1338,12 +1381,20 @@ async def analyze_and_save(
         static_risk_flags=["hardcoded_c2_ip"] if any(match.category == "network_indicator" for match in yara_matches) else [],
     )
 
-    # Run orchestrator graph with populated dynamic_output
-    initial_state = {"static_output": static_output, "dynamic_output": dynamic_out}
+    # Run orchestrator graph with populated dynamic_output and MB intel
+    task_id = getattr(dynamic_out, "task_id", None) or str(uuid.uuid4())
+    intel_floor = 85 if (mb_data and mb_data.get("signature")) else None
+    initial_state = {
+        "static_output": static_output,
+        "dynamic_output": dynamic_out,
+        "malware_bazaar": mb_data,
+        "intel_floor": intel_floor,
+        "task_id": task_id,
+    }
     final_state = await asyncio.to_thread(_graph.invoke, initial_state)
 
-    if mb_data and mb_data.get("signature"):
-        final_state["risk_score"] = max(final_state.get("risk_score", 0), 85)
+    if intel_floor:
+        final_state["risk_score"] = max(final_state.get("risk_score", 0), intel_floor)
 
     # Extract network indicators from static + dynamic sources (no fabrication)
     network_indicators = _extract_network_indicators(raw_static, dynamic_out)
@@ -1381,11 +1432,13 @@ async def analyze_and_save(
     dynamic_analysis_result = {
         "available": True,
         "execution_mode": dynamic_dict.get("execution_mode", "simulated"),
+        "dynamic_status": dynamic_dict.get("dynamic_status") or dynamic_dict.get("status", "completed"),
+        "failure_reason": dynamic_dict.get("failure_reason"),
         "status": dynamic_dict.get("status", "completed"),
         "message": dynamic_dict.get("message"),
         "target_architecture": dynamic_dict.get("target_architecture"),
         "duration_seconds": dynamic_dict.get("duration_seconds"),
-        "task_id": dynamic_dict.get("sample_id"),
+        "task_id": dynamic_dict.get("task_id") or task_id,
         "sandbox_url": sandbox.sandbox_url(),
         "network_connections": dynamic_dict.get("network_connections", []),
         "c2_endpoints_detected": dynamic_dict.get("c2_endpoints_detected", []),

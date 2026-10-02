@@ -95,8 +95,17 @@ def _rule_keylogging(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
 
 def _rule_cron_persistence(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
     """Linux — persistence via cron/crontab."""
-    if dynamic and any("cron" in a.lower() for a in dynamic.persistence_artifacts):
-        return MitreTechnique(technique_id="T1053.003", technique_name="Scheduled Task/Job: Cron", confidence=0.85)
+    cron_indicators = ("/etc/cron", "crontab", "/var/spool/cron", "/etc/crontab")
+    dynamic_hit = dynamic and (
+        any(any(ind in a.lower() for ind in cron_indicators) for a in (dynamic.persistence_artifacts + dynamic.files_written))
+        or any("crontab" in str(proc).lower() for proc in dynamic.process_tree)
+    )
+    static_hit = any(
+        any(ind in kw.lower() for ind in ("/etc/cron", "crontab", "/var/spool/cron"))
+        for kw in static.extracted_strings.suspicious_keywords
+    )
+    if dynamic_hit or static_hit:
+        return MitreTechnique(technique_id="T1053.003", technique_name="Scheduled Task/Job: Cron", confidence=0.85 if dynamic_hit else 0.65)
     return None
 
 
@@ -161,11 +170,15 @@ def _rule_reverse_shell(static: StaticAnalysisOutput, dynamic: Optional[DynamicA
 def _rule_unix_shell(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
     """T1059.004 — Command and Scripting Interpreter: Unix Shell."""
     shell_spawn = dynamic and any(
-        proc in str(dynamic.process_tree).lower() for proc in ("/bin/sh", "/bin/bash")
+        proc in str(dynamic.process_tree).lower() for proc in ("/bin/sh", "/bin/bash", "/bin/dash", "sh -c", "bash -c")
+    )
+    static_hit = any(
+        kw.strip() in ("/bin/sh", "/bin/bash", "/bin/dash")
+        for kw in static.extracted_strings.suspicious_keywords
     )
     has_network = dynamic and len(dynamic.network_connections) > 0
-    if shell_spawn and has_network:
-        return MitreTechnique(technique_id="T1059.004", technique_name="Command and Scripting Interpreter: Unix Shell", confidence=0.85)
+    if (shell_spawn and has_network) or static_hit:
+        return MitreTechnique(technique_id="T1059.004", technique_name="Command and Scripting Interpreter: Unix Shell", confidence=0.85 if shell_spawn else 0.60)
     return None
 
 
@@ -209,7 +222,7 @@ def _rule_resource_hijacking(static: StaticAnalysisOutput, dynamic: Optional[Dyn
 def _rule_hidden_files(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
     """T1564.001 — Hide Artifacts: Hidden Files and Directories."""
     hidden_path = dynamic and any(
-        any(part.startswith(".") and len(part) > 1 for part in Path(f).parts)
+        any(part.startswith(".") and len(part) > 1 and not part.startswith("..") for part in Path(f).parts)
         for f in (dynamic.files_written + dynamic.persistence_artifacts)
     )
     if hidden_path:
@@ -239,6 +252,22 @@ def _rule_debugger_evasion(static: StaticAnalysisOutput, dynamic: Optional[Dynam
     return None
 
 
+def _rule_web_protocols(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
+    """T1071.001 — Application Layer Protocol: Web Protocols."""
+    dynamic_hit = dynamic and any(
+        conn.get("dest_port") in (80, 443, 8080, 8443) or conn.get("port") in (80, 443, 8080, 8443)
+        or str(conn.get("protocol")).lower() in ("http", "https")
+        for conn in dynamic.network_connections
+    )
+    static_hit = bool(static.extracted_strings.urls)
+    if dynamic_hit or static_hit:
+        return MitreTechnique(
+            technique_id="T1071.001",
+            technique_name="Application Layer Protocol: Web Protocols",
+            confidence=0.70,
+        )
+    return None
+
 
 MITRE_RULES = [
     _rule_sms_access,
@@ -259,6 +288,7 @@ MITRE_RULES = [
     _rule_resource_hijacking,
     _rule_hidden_files,
     _rule_debugger_evasion,
+    _rule_web_protocols,
 ]
 
 

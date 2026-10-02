@@ -159,8 +159,8 @@ def test_risk_explanation_and_vendor_confidence():
     assert "intel_floor_note" in explanation
 
     threat = _build_threat_assessment(85, [], [], [], True, malware_bazaar=mb_data)
-    # Counted = VendorA, VendorB, VendorC (3). Agreeing = 2. 95 * 2/3 = 63.
-    assert threat["confidence"] == 63
+    # Counted = VendorA, VendorB, VendorC, MalwareBazaar (4). Agreeing = 3. 95 * 3/4 = 71.
+    assert threat["confidence"] == 71
     assert threat["verdict"] == "MALICIOUS"
 
 

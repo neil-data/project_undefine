@@ -289,11 +289,11 @@ class InvestigationEngine:
     
     def _fallback_malware_explanation(self, context: Dict, capabilities: List[str]) -> MalwareExplanation:
         """Fallback malware explanation when AI is not available."""
-        cap_text = ", ".join(capabilities) if capabilities else "no specific capabilities"
+        cap_text = f"exhibits {', '.join(capabilities)}" if capabilities else "no confirmed malicious capabilities"
         
         return MalwareExplanation(
-            summary=f"This {context['platform']} {context['file_type']} sample exhibits {cap_text}.",
-            technical_details=f"Static analysis identified {context['yara_matches']} YARA rule matches. Dynamic analysis captured {context['network_connections']} network connections. MITRE ATT&CK techniques: {', '.join(context['mitre_techniques'])}.",
+            summary=f"This {context['platform']} {context['file_type']} sample shows {cap_text}.",
+            technical_details=f"Static analysis identified {context['yara_matches']} YARA rule matches. Dynamic analysis captured {context['network_connections']} network connections. MITRE ATT&CK techniques: {', '.join(context['mitre_techniques']) or 'none'}.",
             capabilities_identified=capabilities,
             confidence_level=0.7
         )
@@ -350,23 +350,25 @@ class InvestigationEngine:
                     privacy_risks.append("Remote control capability")
         
         # Determine overall impact aligned with risk score and actual compromise
-        high_risk_count = sum([
-            len(financial_risks),
-            len([r for r in privacy_risks if "surveillance" in r.lower() or "tracking" in r.lower()])
-        ])
-        
-        risk_score = state.get("risk_score") or (static.get("risk_score", 0) if isinstance(static, dict) else 0)
-        has_c2 = any("command & control" in d.lower() or "c2" in d.lower() for d in device_integrity)
-        has_compromise = any("system compromise" in d.lower() or "persistence" in d.lower() for d in device_integrity)
-
-        if risk_score >= 80 or (has_c2 and has_compromise) or high_risk_count >= 3:
-            overall_impact = "critical"
-        elif risk_score >= 60 or has_c2 or high_risk_count >= 2:
-            overall_impact = "high"
-        elif risk_score >= 30 or high_risk_count >= 1 or has_compromise:
-            overall_impact = "medium"
+        if state.get("victim_impact") and isinstance(state.get("victim_impact"), str):
+            overall_impact = state.get("victim_impact")
         else:
-            overall_impact = "low"
+            high_risk_count = sum([
+                len(financial_risks),
+                len([r for r in privacy_risks if "surveillance" in r.lower() or "tracking" in r.lower()])
+            ])
+            risk_score = state.get("risk_score") or (static.get("risk_score", 0) if isinstance(static, dict) else 0)
+            has_c2 = any("command & control" in d.lower() or "c2" in d.lower() for d in device_integrity)
+            has_compromise = any("system compromise" in d.lower() or "persistence" in d.lower() for d in device_integrity)
+
+            if risk_score >= 80 or (has_c2 and has_compromise) or high_risk_count >= 3:
+                overall_impact = "critical"
+            elif risk_score >= 60 or has_c2 or high_risk_count >= 2:
+                overall_impact = "high"
+            elif risk_score >= 30 or high_risk_count >= 1 or has_compromise:
+                overall_impact = "medium"
+            else:
+                overall_impact = "low"
         
         explanation = f"The malware poses a {overall_impact} risk to the victim. "
         if financial_risks:
@@ -584,9 +586,14 @@ class InvestigationEngine:
         file_type = static.get("file_type", "unknown")
         capability_list = [c.get("capability", "unknown") for c in capabilities]
         
+        if capability_list:
+            caps_phrase = f"The sample exhibits {len(capability_list)} malicious capabilities: {', '.join(capability_list)}. "
+        else:
+            caps_phrase = "No malicious capabilities were identified. "
+
         executive_summary = (
             f"This investigation analyzed a {platform} {file_type} sample (ID: {sample_id}). "
-            f"The sample exhibits {len(capability_list)} malicious capabilities: {', '.join(capability_list)}. "
+            f"{caps_phrase}"
         )
         
         if victim_impact:

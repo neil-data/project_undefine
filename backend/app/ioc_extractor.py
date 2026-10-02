@@ -49,18 +49,9 @@ class IOCExtractor:
         r'(?<![A-Za-z0-9_>:\*\\])https?://(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?:/[^\s\"\'<>]*)?'
     )
 
-    # Known C2 and malicious IPs (mock data)
-    KNOWN_C2_IPS = {
-        "1.2.3.4",
-        "10.0.0.1",
-        "192.168.1.100",
-    }
-
-    KNOWN_C2_DOMAINS = {
-        "malware.com",
-        "c2.evil.net",
-        "command.badguy.org",
-    }
+    # Known C2 and malicious IPs (populated dynamically or via threat feeds)
+    KNOWN_C2_IPS: Set[str] = set()
+    KNOWN_C2_DOMAINS: Set[str] = set()
 
     def __init__(self, redis_client: redis.Redis, db_session: Session, config: Dict[str, Any]):
         self.redis = redis_client
@@ -321,6 +312,8 @@ class IOCExtractor:
             # Exclude unspecified (0.0.0.0), private, loopback, link_local, reserved, multicast
             if ip.is_unspecified or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                 return False
+            if ip_str.startswith("10.0.2.") or ip_str.startswith("192.168.100.") or ip_str.startswith("192.168.122.") or ip_str.startswith("127."):
+                return False
             if ip_str.startswith("0.") or ip_str == "255.255.255.255":
                 return False
             # Reject common ASN.1 OID patterns like 1.3.6.1, 1.2.840...
@@ -377,6 +370,8 @@ class IOCExtractor:
                 return False
             if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", part):
                 return False
-        if clean in ("localhost", "example.com", "test.com"):
+        if clean in ("localhost", "example.com", "test.com", "a.out", "ldr", "classes.dexpk", "classes.dex"):
+            return False
+        if "dex" in clean and clean.endswith("pk"):
             return False
         return True

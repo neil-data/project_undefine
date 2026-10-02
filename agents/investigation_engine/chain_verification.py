@@ -199,8 +199,12 @@ class ChainVerifier:
         # Create signature if secret key is available
         signature = None
         if self.secret_key:
-            exec_mode = metadata.get("execution_mode", "")
-            link_data = f"{link_type.value}:{timestamp}:{data_hash}:{previous_hash}:{exec_mode}"
+            sample_id = str(metadata.get("sample_id", ""))
+            task_id = str(metadata.get("task_id", ""))
+            exec_mode = str(metadata.get("execution_mode", ""))
+            evidence_state = str(metadata.get("evidence_state", ""))
+            intel_floor = str(metadata.get("intel_floor", ""))
+            link_data = f"{link_type.value}:{timestamp}:{data_hash}:{previous_hash}:{sample_id}:{task_id}:{exec_mode}:{evidence_state}:{intel_floor}"
             signature = self.compute_hmac(link_data)
         
         return ChainLink(
@@ -229,12 +233,19 @@ class ChainVerifier:
         
         # Verify signature if present
         if link.signature and self.secret_key:
-            exec_mode = (link.metadata or {}).get("execution_mode", "")
-            link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{exec_mode}"
+            meta = link.metadata or {}
+            sample_id = str(meta.get("sample_id", ""))
+            task_id = str(meta.get("task_id", ""))
+            exec_mode = str(meta.get("execution_mode", ""))
+            evidence_state = str(meta.get("evidence_state", ""))
+            intel_floor = str(meta.get("intel_floor", ""))
+            link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{sample_id}:{task_id}:{exec_mode}:{evidence_state}:{intel_floor}"
             if not self.verify_hmac(link_data, link.signature):
-                legacy_link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}"
+                legacy_link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{exec_mode}"
                 if not self.verify_hmac(legacy_link_data, link.signature):
-                    return False
+                    older_link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}"
+                    if not self.verify_hmac(older_link_data, link.signature):
+                        return False
         
         return True
     
@@ -348,7 +359,14 @@ class ChainVerifier:
                         link_type=link_type,
                         data=data,
                         previous_hash=previous_hash,
-                        metadata={"has_data": True}
+                        metadata={
+                            "has_data": True,
+                            "sample_id": investigation_state.get("sample_id", ""),
+                            "task_id": investigation_state.get("task_id", ""),
+                            "execution_mode": investigation_state.get("execution_mode", ""),
+                            "evidence_state": investigation_state.get("evidence_state", ""),
+                            "intel_floor": investigation_state.get("intel_floor", 0),
+                        }
                     )
                     chain.append(link)
                     previous_hash = link.data_hash

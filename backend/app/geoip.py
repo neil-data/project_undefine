@@ -317,3 +317,19 @@ def check_tor_status(ip: str, asn: Optional[int] = None) -> tuple[bool, str]:
         return True, "Hosting ASN associated with Tor relay infrastructure"
 
     return False, ""
+
+
+_MINING_POOL_KEYWORDS = (
+    "stratum", "pool.mine", "cryptonight", "xmrig", "monero", "nanopool", "supportxmr", "2miners", "ethermine"
+)
+
+
+def check_mining_pool(indicator: str) -> tuple[bool, str]:
+    """Identify if IP or domain belongs to known cryptomining pool infrastructure."""
+    if not indicator:
+        return False, ""
+    lowered = indicator.lower()
+    for kw in _MINING_POOL_KEYWORDS:
+        if kw in lowered:
+            return True, f"Cryptocurrency mining pool infrastructure ({kw})"
+    return False, ""

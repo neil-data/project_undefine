@@ -155,7 +155,7 @@ async def _process_job(raw_job: str) -> None:
                 platform=case_data.get("platform"),
                 file_type=case_data.get("file_type"),
             )
-            case_data["dynamic_analysis"] = dynamic
+            case_data["dynamic_analysis"] = dynamic.model_dump() if hasattr(dynamic, "model_dump") else dynamic
             case_data["analysis_status"] = "COMPLETED"
             await save_case(case_data["sample_id"], case_data, event_type="dynamic_analysis_checked")
 
