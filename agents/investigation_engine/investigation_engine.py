@@ -349,17 +349,21 @@ class InvestigationEngine:
                     device_integrity.append("Command & control communication detected")
                     privacy_risks.append("Remote control capability")
         
-        # Determine overall impact
+        # Determine overall impact aligned with risk score and actual compromise
         high_risk_count = sum([
             len(financial_risks),
             len([r for r in privacy_risks if "surveillance" in r.lower() or "tracking" in r.lower()])
         ])
         
-        if high_risk_count >= 3:
+        risk_score = state.get("risk_score") or (static.get("risk_score", 0) if isinstance(static, dict) else 0)
+        has_c2 = any("command & control" in d.lower() or "c2" in d.lower() for d in device_integrity)
+        has_compromise = any("system compromise" in d.lower() or "persistence" in d.lower() for d in device_integrity)
+
+        if risk_score >= 80 or (has_c2 and has_compromise) or high_risk_count >= 3:
             overall_impact = "critical"
-        elif high_risk_count >= 2:
+        elif risk_score >= 60 or has_c2 or high_risk_count >= 2:
             overall_impact = "high"
-        elif high_risk_count >= 1:
+        elif risk_score >= 30 or high_risk_count >= 1 or has_compromise:
             overall_impact = "medium"
         else:
             overall_impact = "low"

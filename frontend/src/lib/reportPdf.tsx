@@ -307,17 +307,25 @@ export async function generateForensicPDF(
   let dynamicHtml: string;
   if (dynamic) {
     const d = dynamic as any;
-    dynRows.push(`<b>${t.status}:</b> ${escapeHtml(value(d.status, unavailable))}`);
+    const isSim = d.execution_mode === "simulated";
+    if (isSim) {
+      dynRows.push(
+        `<div style="background:#fffbe6;border:1px solid #ffe58f;color:#d48806;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:9.5px;font-weight:bold;">⚠️ DYNAMIC RESULTS ARE SIMULATED; NOT OBSERVED BEHAVIOR (HEURISTIC SIMULATION).</div>`
+      );
+    }
+    dynRows.push(`<b>${t.status}:</b> ${escapeHtml(value(d.status, unavailable))}${isSim ? " (SIMULATED)" : ""}`);
+    dynRows.push(`<b>Execution mode:</b> ${isSim ? "Simulated Heuristic" : "Real Detonation"}`);
     dynRows.push(`<b>${t.available}:</b> ${escapeHtml(yesNo(d.available))}`);
+    if (d.target_architecture) dynRows.push(`<b>Architecture:</b> ${escapeHtml(d.target_architecture)}`);
     const dynMessage = value(d.message ?? d.details, "");
     if (dynMessage) dynRows.push(`<b>${t.details}:</b> ${escapeHtml(dynMessage)}`);
     if (value(d.task_id, "") !== "") dynRows.push(`<b>Task ID:</b> ${escapeHtml(d.task_id)}`);
     if (d.sandbox_url) dynRows.push(`<b>Sandbox:</b> ${escapeHtml(d.sandbox_url)}`);
-    if (d.duration_seconds !== undefined)
+    if (d.duration_seconds !== undefined && !isSim)
       dynRows.push(`<b>Duration:</b> ${escapeHtml(String(d.duration_seconds))}s`);
     detailList("Network connections", d.network_connections, (c: any) =>
       `<li style="margin-bottom:3px;font-size:11px;line-height:1.5;">${escapeHtml(
-        [c.dest_ip || c.ip, c.dest_port || c.port, c.protocol, c.flagged_c2 ? "(C2)" : ""]
+        [c.dest_ip || c.ip, c.dest_port || c.port, c.protocol, c.flagged_c2 ? "(C2)" : "", isSim ? "(simulated)" : ""]
           .filter(Boolean)
           .join(" ")
       )}</li>`

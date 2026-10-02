@@ -67,10 +67,45 @@ def _build_findings_text(
     return "\n".join(lines)
 
 
+FORBIDDEN_UNGROUNDED_TERMS = ("systemd", "rc.local", "pkexec", "xor", "named pipe")
+
+
+def _is_grounded(text: str, static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> bool:
+    """Check if any forbidden specific technical term is mentioned without raw evidence."""
+    lowered = text.lower()
+    raw_evidence_corpus = []
+
+    # Gather static evidence strings
+    if static.extracted_strings:
+        raw_evidence_corpus.extend(static.extracted_strings.suspicious_keywords)
+        raw_evidence_corpus.extend(static.extracted_strings.urls)
+        raw_evidence_corpus.extend(static.extracted_strings.ips)
+    for ym in static.yara_matches:
+        raw_evidence_corpus.append(ym.rule_name)
+        if ym.description:
+            raw_evidence_corpus.append(ym.description)
+
+    # Gather dynamic evidence strings
+    if dynamic:
+        raw_evidence_corpus.extend(dynamic.api_calls)
+        raw_evidence_corpus.extend(dynamic.persistence_artifacts)
+        raw_evidence_corpus.extend(dynamic.registry_changes)
+        raw_evidence_corpus.extend(dynamic.files_written)
+        raw_evidence_corpus.append(str(dynamic.process_tree))
+
+    raw_text = " ".join(raw_evidence_corpus).lower()
+
+    for term in FORBIDDEN_UNGROUNDED_TERMS:
+        if term in lowered and term not in raw_text:
+            return False
+    return True
+
+
 def _fallback_summary(
     static: StaticAnalysisOutput,
     capabilities: list[CapabilityTag],
     risk_score: int,
+    dynamic: Optional[DynamicAnalysisOutput] = None,
 ) -> str:
     caps = [c.capability.replace("_", " ") for c in capabilities]
     cap_text = " and ".join(caps) if caps else "no confirmed malicious capability"
@@ -91,12 +126,12 @@ def generate_narrative(
     api_key = os.environ.get("GROQ_API_KEY")
 
     if not api_key:
-        return _fallback_summary(static, capabilities, risk_score)
+        return _fallback_summary(static, capabilities, risk_score, dynamic)
 
     try:
         from groq import Groq
     except ImportError:
-        return _fallback_summary(static, capabilities, risk_score) + " (groq package not installed)"
+        return _fallback_summary(static, capabilities, risk_score, dynamic) + " (groq package not installed)"
 
     findings = _build_findings_text(static, dynamic, mitre, capabilities, risk_score)
 
@@ -104,23 +139,67 @@ def generate_narrative(
         client = Groq(api_key=api_key)
         preferred_model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
         candidate_models = [preferred_model, "qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"]
-        
+
+        system_instruction = (
+            SYSTEM_PROMPT +
+            f"\nStrict Constraints:\n"
+            f"- The verified risk score is {risk_score}/100. Do NOT contradict or alter this score.\n"
+            f"- If network connections or C2 are listed in findings, state them accurately; do NOT claim the file makes no outbound connections.\n"
+            f"- ONLY state technical mechanisms (cron, shell, files) if explicitly listed in the findings.\n"
+        )
+
         last_err = None
         for model_name in candidate_models:
             if not model_name:
                 continue
             try:
+                # Attempt 1
                 response = client.chat.completions.create(
                     model=model_name,
                     messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": system_instruction},
                         {"role": "user", "content": f"Findings:\n{findings}\n\nWrite the summary now."},
                     ],
-                    temperature=0.3,
+                    temperature=0.2,
                     max_tokens=300,
                     timeout=15,
                 )
-                return response.choices[0].message.content.strip()
+                text = response.choices[0].message.content.strip()
+
+                # Validate against hallucinated ungrounded terms
+                if _is_grounded(text, static, dynamic):
+                    return text
+
+                # Attempt 2: Retry with explicit grounding correction
+                correction_prompt = (
+                    f"Findings:\n{findings}\n\n"
+                    f"Correction: Your previous summary contained technical mechanisms not present in the findings. "
+                    f"You must strictly ground your summary ONLY in the evidence provided above. "
+                    f"Do not mention systemd, rc.local, pkexec, xor, or named pipes unless listed in findings. "
+                    f"Write the corrected summary now."
+                )
+                retry_resp = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": correction_prompt},
+                    ],
+                    temperature=0.1,
+                    max_tokens=300,
+                    timeout=15,
+                )
+                retry_text = retry_resp.choices[0].message.content.strip()
+                if _is_grounded(retry_text, static, dynamic):
+                    return retry_text
+
+                # Ungrounded after retry -> use deterministic template fallback
+                caps_str = ", ".join(c.capability.replace("_", " ") for c in capabilities) or "suspicious characteristics"
+                return (
+                    f"This {static.platform} {static.file_type} binary exhibits {caps_str}. "
+                    f"Calculated risk score is {risk_score}/100 based on verified static heuristics and behavioral patterns. "
+                    f"Immediate containment and perimeter network monitoring are advised."
+                )
+
             except Exception as ex:
                 last_err = ex
                 if "model_not_found" in str(ex) or "does not exist" in str(ex):
@@ -129,8 +208,7 @@ def generate_narrative(
 
         if last_err:
             raise last_err
-        return _fallback_summary(static, capabilities, risk_score)
+        return _fallback_summary(static, capabilities, risk_score, dynamic)
     except Exception as e:
-        # Never let an LLM/network failure crash the whole pipeline —
-        # degrade to the template summary and keep going.
-        return _fallback_summary(static, capabilities, risk_score) + f" (Groq call failed: {e})"
+        return _fallback_summary(static, capabilities, risk_score, dynamic) + f" (Groq call failed: {e})"
+

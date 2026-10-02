@@ -133,6 +133,16 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
         </div>
       </div>
 
+      {/* Simulation Banner when running in simulated mode */}
+      {dyn?.execution_mode === "simulated" && (
+        <div className="bg-[#f4b400]/10 border border-[#f4b400]/30 rounded-lg p-3 text-[#f4b400] text-xs flex items-center gap-2.5 font-mono">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-[#f4b400]" />
+          <div>
+            <span className="font-bold uppercase tracking-wider">Simulation Notice:</span> Dynamic results are simulated; not observed behavior. Analysis was derived from static heuristics and threat intelligence.
+          </div>
+        </div>
+      )}
+
       {/* Main Sandbox Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
@@ -144,8 +154,8 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
               SANDBOX TERMINAL // {activeCase.id}
             </span>
             <div className="flex items-center gap-2 text-[10px] font-mono text-[#6F6F6F]">
-              <span className="w-2 h-2 rounded-full bg-[#16ff4d] animate-ping" />
-              <span>LIVE GUEST VM</span>
+              <span className={`w-2 h-2 rounded-full ${dyn?.execution_mode === "simulated" ? "bg-[#f4b400]" : "bg-[#16ff4d] animate-ping"}`} />
+              <span>{dyn?.execution_mode === "simulated" ? "HEURISTIC SIMULATION" : "LIVE GUEST VM"}</span>
             </div>
           </div>
 

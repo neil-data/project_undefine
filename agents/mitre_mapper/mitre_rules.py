@@ -13,6 +13,7 @@ that takes (static, dynamic) and returns a MitreTechnique or None.
 
 from __future__ import annotations
 from typing import Optional
+from pathlib import Path
 
 from agents.orchestrator.schema import StaticAnalysisOutput, DynamicAnalysisOutput, MitreTechnique
 
@@ -146,15 +147,97 @@ def _rule_reverse_shell(static: StaticAnalysisOutput, dynamic: Optional[DynamicA
     """
     Cross-platform (ELF/Mach-O/PE) — classic reverse-shell pattern:
     spawning a shell/command interpreter combined with a live network
-    connection. Applies regardless of OS since the pattern is the same.
+    connection.
     """
     shell_spawn = dynamic and any(
         proc in str(dynamic.process_tree).lower() for proc in ("/bin/sh", "/bin/bash", "cmd.exe", "powershell")
     )
     has_network = dynamic and len(dynamic.network_connections) > 0
     if shell_spawn and has_network:
-        return MitreTechnique(technique_id="T1059", technique_name="Command and Scripting Interpreter", confidence=0.8)
+        return MitreTechnique(technique_id="T1059", technique_name="Command and Scripting Interpreter", confidence=0.85)
     return None
+
+
+def _rule_unix_shell(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
+    """T1059.004 — Command and Scripting Interpreter: Unix Shell."""
+    shell_spawn = dynamic and any(
+        proc in str(dynamic.process_tree).lower() for proc in ("/bin/sh", "/bin/bash")
+    )
+    has_network = dynamic and len(dynamic.network_connections) > 0
+    if shell_spawn and has_network:
+        return MitreTechnique(technique_id="T1059.004", technique_name="Command and Scripting Interpreter: Unix Shell", confidence=0.85)
+    return None
+
+
+def _rule_ingress_tool_transfer(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
+    """T1105 — Ingress Tool Transfer (curl, wget, ftpget, tftp)."""
+    tools = ("curl", "wget", "ftpget", "tftp", "busybox wget")
+    dynamic_hit = dynamic and any(
+        tool in str(dynamic.process_tree).lower() or tool in str(dynamic.api_calls).lower()
+        for tool in tools
+    )
+    static_hit = any(
+        tool in kw.lower() for kw in static.extracted_strings.suspicious_keywords for tool in tools
+    )
+    if dynamic_hit or static_hit:
+        return MitreTechnique(
+            technique_id="T1105",
+            technique_name="Ingress Tool Transfer",
+            confidence=0.85 if dynamic_hit else 0.65,
+        )
+    return None
+
+
+def _rule_resource_hijacking(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
+    """T1496 — Resource Hijacking (Cryptomining)."""
+    mining_indicators = ("stratum", "cryptonight", "xmrig", "monero", "minergate", "pool.mine")
+    static_hit = any(
+        m in kw.lower() for kw in static.extracted_strings.suspicious_keywords for m in mining_indicators
+    )
+    dynamic_conn_hit = dynamic and any(
+        c.get("dest_port") in (3333, 8888, 9999, 14444) for c in dynamic.network_connections
+    )
+    if static_hit or dynamic_conn_hit:
+        return MitreTechnique(
+            technique_id="T1496",
+            technique_name="Resource Hijacking: Cryptomining",
+            confidence=0.85 if (static_hit and dynamic_conn_hit) else 0.7,
+        )
+    return None
+
+
+def _rule_hidden_files(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
+    """T1564.001 — Hide Artifacts: Hidden Files and Directories."""
+    hidden_path = dynamic and any(
+        any(part.startswith(".") and len(part) > 1 for part in Path(f).parts)
+        for f in (dynamic.files_written + dynamic.persistence_artifacts)
+    )
+    if hidden_path:
+        return MitreTechnique(
+            technique_id="T1564.001",
+            technique_name="Hide Artifacts: Hidden Files and Directories",
+            confidence=0.8,
+        )
+    return None
+
+
+def _rule_debugger_evasion(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
+    """T1622 — Debugger Evasion (ptrace / TracerPid only)."""
+    anti_debug_terms = ("ptrace", "ptrace_traceme", "tracerpid", "isdebuggerpresent")
+    static_hit = any(
+        term in kw.lower() for kw in static.extracted_strings.suspicious_keywords for term in anti_debug_terms
+    )
+    dynamic_hit = dynamic and any(
+        term in c.lower() for c in dynamic.api_calls for term in anti_debug_terms
+    )
+    if static_hit or dynamic_hit:
+        return MitreTechnique(
+            technique_id="T1622",
+            technique_name="Debugger Evasion",
+            confidence=0.85 if dynamic_hit else 0.65,
+        )
+    return None
+
 
 
 MITRE_RULES = [
@@ -171,6 +254,11 @@ MITRE_RULES = [
     _rule_ld_preload_hijack,
     _rule_setuid_privilege_escalation,
     _rule_reverse_shell,
+    _rule_unix_shell,
+    _rule_ingress_tool_transfer,
+    _rule_resource_hijacking,
+    _rule_hidden_files,
+    _rule_debugger_evasion,
 ]
 
 

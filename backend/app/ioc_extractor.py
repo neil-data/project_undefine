@@ -313,13 +313,13 @@ class IOCExtractor:
             self.db.rollback()
 
     def _is_valid_ip(self, ip_str: str) -> bool:
-        """Validate IP address, rejecting unspecified/reserved ranges and ASN.1 OID prefixes."""
+        """Validate IP address, rejecting unspecified/reserved/private ranges and ASN.1 OID prefixes."""
         try:
             ip = ipaddress.ip_address(ip_str)
             if ip.version != 4:
                 return False
-            # Exclude unspecified (0.0.0.0), private, loopback, reserved, broadcast
-            if ip.is_unspecified or ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_multicast:
+            # Exclude unspecified (0.0.0.0), private, loopback, link_local, reserved, multicast
+            if ip.is_unspecified or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                 return False
             if ip_str.startswith("0.") or ip_str == "255.255.255.255":
                 return False
@@ -344,17 +344,39 @@ class IOCExtractor:
             if parts.scheme.lower() not in ("http", "https"):
                 return False
             host = parts.hostname or ""
-            if not host or "." not in host or any(c in host for c in ('"', "'", "<", ">", "*", "^", "\\", "{", "}")):
+            if not host or not self._is_valid_domain(host) and not self._is_valid_ip(host):
                 return False
             return True
         except Exception:
             return False
 
+    _INVALID_EXTENSIONS = (
+        ".out", ".bin", ".dex", ".dexpk", ".p", ".sh", ".exe", ".dat", ".tmp",
+        ".so", ".dll", ".o", ".a", ".py", ".pyc", ".c", ".h", ".cpp", ".txt",
+        ".log", ".conf", ".cfg", ".xml", ".json", ".yaml", ".yml", ".md",
+        ".class", ".jar", ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
+    )
+
     def _is_valid_domain(self, domain: str) -> bool:
-        """Validate domain name."""
-        # Exclude common false positives
-        if len(domain) < 5 or domain.startswith("www"):
+        """Validate domain name against structure and binary noise extensions."""
+        if not domain or len(domain) < 4 or len(domain) > 253:
             return False
-        if domain in ["localhost", "example.com", "test.com"]:
+        clean = domain.lower().strip(".")
+        if any(c in clean for c in ('/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '\t', '\r', '\n')):
+            return False
+        if "." not in clean:
+            return False
+        parts = clean.split(".")
+        tld = parts[-1]
+        if not re.match(r"^[a-z]{2,24}$", tld):
+            return False
+        if f".{tld}" in self._INVALID_EXTENSIONS:
+            return False
+        for part in parts:
+            if not part or len(part) > 63:
+                return False
+            if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", part):
+                return False
+        if clean in ("localhost", "example.com", "test.com"):
             return False
         return True

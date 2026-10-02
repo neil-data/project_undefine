@@ -449,6 +449,17 @@ export function AiReportsTab({ activeCase, examiner }: AiReportsTabProps) {
                       {activeCase.aiAnalysis.ai_available ? "AI: ACTIVE" : "AI: FALLBACK"}
                     </span>
                   )}
+                  {activeCase.sandboxResult?.execution_mode === "simulated" && (
+                    <span className="px-2 py-1 rounded text-[8px] font-mono border border-[#f4b400]/40 text-[#f4b400] bg-[#f4b400]/10">
+                      SIMULATED DYNAMICS
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {activeCase.sandboxResult?.execution_mode === "simulated" && (
+                <div className="p-2.5 rounded bg-[#f4b400]/5 border border-[#f4b400]/25 text-[11px] font-mono text-[#f4b400]">
+                  <span className="font-bold">⚠️ SIMULATION NOTICE:</span> Dynamic findings in this report are simulated; not observed behavior. Analysis was derived from static heuristics and threat intelligence.
                 </div>
               )}
 

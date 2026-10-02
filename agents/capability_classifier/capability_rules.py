@@ -193,6 +193,75 @@ def _cap_library_hijack(static: StaticAnalysisOutput, dynamic: Optional[DynamicA
     return None
 
 
+def _cap_downloader(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Ingress tool transfer / dropper capability."""
+    tools = ("curl", "wget", "ftpget", "tftp", "busybox wget")
+    dynamic_hit = dynamic and any(
+        tool in str(dynamic.process_tree).lower() or tool in str(dynamic.api_calls).lower()
+        for tool in tools
+    )
+    static_hit = any(
+        tool in kw.lower() for kw in static.extracted_strings.suspicious_keywords for tool in tools
+    )
+    if dynamic_hit or static_hit:
+        return CapabilityTag(
+            capability="downloader",
+            confidence=0.85 if dynamic_hit else 0.65,
+            evidence=["downloads external payloads / tools via command-line utilities"],
+        )
+    return None
+
+
+def _cap_cryptomining(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Cryptomining / resource hijacking capability."""
+    mining_indicators = ("stratum", "cryptonight", "xmrig", "monero", "minergate", "pool.mine")
+    static_hit = any(
+        m in kw.lower() for kw in static.extracted_strings.suspicious_keywords for m in mining_indicators
+    )
+    dynamic_conn_hit = dynamic and any(
+        c.get("dest_port") in (3333, 8888, 9999, 14444) for c in dynamic.network_connections
+    )
+    if static_hit or dynamic_conn_hit:
+        return CapabilityTag(
+            capability="cryptomining",
+            confidence=0.85 if (static_hit and dynamic_conn_hit) else 0.7,
+            evidence=["exhibits cryptocurrency mining configuration or mining pool communication"],
+        )
+    return None
+
+
+def _cap_anti_debug(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Anti-debugging / debugger evasion capability."""
+    anti_debug_terms = ("ptrace", "ptrace_traceme", "tracerpid", "isdebuggerpresent")
+    static_hit = any(
+        term in kw.lower() for kw in static.extracted_strings.suspicious_keywords for term in anti_debug_terms
+    )
+    dynamic_hit = dynamic and any(
+        term in c.lower() for c in dynamic.api_calls for term in anti_debug_terms
+    )
+    if static_hit or dynamic_hit:
+        return CapabilityTag(
+            capability="anti_debug",
+            confidence=0.85 if dynamic_hit else 0.65,
+            evidence=["implements debugger evasion checks (ptrace/TracerPid/anti-debugging APIs)"],
+        )
+    return None
+
+
+def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Command & Control beaconing capability."""
+    has_c2_conn = dynamic and any(c.get("flagged_c2") for c in dynamic.network_connections)
+    has_c2_ep = dynamic and len(dynamic.c2_endpoints_detected) > 0
+    static_c2 = "hardcoded_c2_ip" in static.static_risk_flags
+    if has_c2_conn or has_c2_ep or static_c2:
+        return CapabilityTag(
+            capability="c2_communication",
+            confidence=0.9 if (has_c2_conn or has_c2_ep) else 0.7,
+            evidence=["communicates with confirmed or flagged command-and-control infrastructure"],
+        )
+    return None
+
+
 CAPABILITY_RULES = [
     _cap_sms_otp_theft,
     _cap_gps_tracking,
@@ -206,6 +275,10 @@ CAPABILITY_RULES = [
     _cap_privilege_escalation,
     _cap_reverse_shell,
     _cap_library_hijack,
+    _cap_downloader,
+    _cap_cryptomining,
+    _cap_anti_debug,
+    _cap_c2_communication,
 ]
 
 

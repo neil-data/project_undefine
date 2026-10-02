@@ -293,3 +293,27 @@ def lookup_many(ips: list[str]) -> list[dict]:
         if result is not None:
             results.append(result)
     return results
+
+
+# Known Tor-associated ASNs (e.g. Zwiebelfreunde / AS60729, AS208323)
+_TOR_RELAY_ASNS = {60729, 208323}
+_CONFIRMED_TOR_EXITS: set[str] = set()
+
+
+def check_tor_status(ip: str, asn: Optional[int] = None) -> tuple[bool, str]:
+    """
+    Dual-tier Tor indicator evaluation:
+    - Tier 1: Real Tor exit list match -> "Confirmed Tor exit node"
+    - Tier 2: ASN match (e.g. AS60729) -> "Hosting ASN associated with Tor relay infrastructure"
+    Never conflates an ASN match with a confirmed active exit node.
+    """
+    if not ip or _is_private_ip(ip):
+        return False, ""
+
+    if ip in _CONFIRMED_TOR_EXITS:
+        return True, "Confirmed Tor exit node"
+
+    if asn is not None and asn in _TOR_RELAY_ASNS:
+        return True, "Hosting ASN associated with Tor relay infrastructure"
+
+    return False, ""

@@ -12,7 +12,7 @@ be confirmed with Member 2 once the sandbox is live in Week 3.
 
 from __future__ import annotations
 from typing import Optional, Literal, TypedDict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class YaraMatch(BaseModel):
@@ -81,20 +81,33 @@ class StaticAnalysisOutput(BaseModel):
 
 
 class DynamicAnalysisOutput(BaseModel):
-    """
-    PLACEHOLDER — confirm real shape with Member 2 in Week 3 once the
-    sandbox is live. Fields below are best-guess based on the
-    architecture plan (CAPE report structure + network capture layer).
-    """
-    sample_id: str
+    model_config = ConfigDict(extra="allow")
+
+    sample_id: str = "sample"
+    execution_mode: Literal["real", "simulated"] = "simulated"
+    available: bool = True
+    status: Optional[str] = "completed"
+    task_id: Optional[str] = None
+    sandbox_url: Optional[str] = None
+    message: Optional[str] = None
+    target_architecture: Optional[str] = None
+    duration_seconds: Optional[int] = None
     process_tree: list[dict] = Field(default_factory=list)
     api_calls: list[str] = Field(default_factory=list)
     network_connections: list[dict] = Field(default_factory=list)
+    dns_queries: list[str] = Field(default_factory=list)
     files_written: list[str] = Field(default_factory=list)
     registry_changes: list[str] = Field(default_factory=list)          # Windows-specific
     persistence_artifacts: list[str] = Field(default_factory=list)      # cross-platform: cron entries, launchd plists, systemd units, etc.
     c2_endpoints_detected: list[str] = Field(default_factory=list)
     behavior_chains: list[dict] = Field(default_factory=list)          # Phase 3+: Behavior chains from hook engine
+
+    def __getitem__(self, item: str):
+        return getattr(self, item)
+
+    def get(self, item: str, default=None):
+        return getattr(self, item, default)
+
 
 
 class MitreTechnique(BaseModel):

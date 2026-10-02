@@ -194,11 +194,13 @@ class ChainVerifier:
         """
         data_hash = self.compute_hash(data)
         timestamp = datetime.utcnow().isoformat()
+        metadata = metadata or {}
         
         # Create signature if secret key is available
         signature = None
         if self.secret_key:
-            link_data = f"{link_type.value}:{timestamp}:{data_hash}:{previous_hash}"
+            exec_mode = metadata.get("execution_mode", "")
+            link_data = f"{link_type.value}:{timestamp}:{data_hash}:{previous_hash}:{exec_mode}"
             signature = self.compute_hmac(link_data)
         
         return ChainLink(
@@ -207,7 +209,7 @@ class ChainVerifier:
             data_hash=data_hash,
             previous_hash=previous_hash,
             signature=signature,
-            metadata=metadata or {}
+            metadata=metadata
         )
     
     def verify_chain_link(self, link: ChainLink, expected_previous_hash: str) -> bool:
@@ -227,9 +229,12 @@ class ChainVerifier:
         
         # Verify signature if present
         if link.signature and self.secret_key:
-            link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}"
+            exec_mode = (link.metadata or {}).get("execution_mode", "")
+            link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{exec_mode}"
             if not self.verify_hmac(link_data, link.signature):
-                return False
+                legacy_link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}"
+                if not self.verify_hmac(legacy_link_data, link.signature):
+                    return False
         
         return True
     
