@@ -1,0 +1,52 @@
+=============================================================================
+Phase 4 Baseline Failure Evidence (B1, B2, B3)
+Timestamp: 2026-10-03
+=============================================================================
+
+COMMAND:
+pytest backend/tests/test_phase4_regression.py -v
+
+SUMMARY:
+8 failed, 5 passed in 105.70s
+
+FAILURES:
+
+1. TestB1SecurityIntegrity::test_b1_manifest_hmac_generated_and_verified
+   - Reason: Manifest HMAC signature missing.
+   - Trace: AssertionError: assert ('_hmac' in manifest or 'signature' in manifest)
+   - Root Cause: sandbox-host/app/runner.py generates manifest.json with raw artifact hashes but does not sign the manifest with HMAC-SHA256 using the shared secret.
+
+2. TestB1SecurityIntegrity::test_b1_tampered_manifest_rejected_by_backend
+   - Reason: Tampered manifest accepted without cryptographic HMAC verification.
+   - Trace: output.status is not failed / rejected on forged manifest.
+   - Root Cause: backend/app/sandbox.py fetches manifest.json without verifying HMAC signature against sandbox_token().
+
+3. TestB1SecurityIntegrity::test_b1_evidence_to_sample_binding_mismatch_rejected
+   - Reason: Missing evidence-to-sample binding.
+   - Trace: DynamicAnalysisOutput did not fail when meta.json sample_sha256 differed from submitted binary.
+   - Root Cause: backend/app/sandbox.py does not fetch or validate meta.json sample_sha256 against submitted file's SHA-256.
+
+4. TestB2SecurityBoundaries::test_b2_job_id_path_traversal_rejected
+   - Reason: Unsanitized job_id allowed path traversal strings.
+   - Trace: AssertionError: Path traversal in job_id not blocked: ../../etc/passwd (status was 200 or 500 instead of strict 400/404 rejection).
+   - Root Cause: sandbox-host/app/main.py does not validate job_id format as a UUID, and does not check path containment within ARTIFACTS_DIR.
+
+5. TestB2SecurityBoundaries::test_b2_subprocess_environment_scrubbing
+   - Reason: Subprocess execution inherited entire host environment.
+   - Trace: AssertionError: Runner failed to pass explicit scrubbed env to subprocess (assert None is not None).
+   - Root Cause: sandbox-host/app/runner.py called asyncio.create_subprocess_exec without env parameter, leaking SANDBOX_API_TOKEN, AWS keys, and host environment to untrusted malware.
+
+6. TestB3SandboxArchitecture::test_b3_runner_distinguishes_timed_out_status
+   - Reason: Timed out execution reported as "completed".
+   - Trace: AssertionError: assert 'completed' == 'timed_out'
+   - Root Cause: sandbox-host/app/runner.py:219 hardcoded "status": "completed" if exit_code == 0 or exit_code == -9 else "completed".
+
+7. TestB3SandboxArchitecture::test_b3_runner_distinguishes_failed_status
+   - Reason: Process crash / non-zero exit code reported as "completed".
+   - Trace: AssertionError: assert 'completed' == 'failed'
+   - Root Cause: sandbox-host/app/runner.py:219 unconditionally returns "completed" regardless of exit code.
+
+8. TestB3SandboxArchitecture::test_b3_backend_propagates_timed_out_status
+   - Reason: Backend fails to propagate "timed_out" state and polling loop does not break on "timed_out".
+   - Trace: AssertionError: assert 'failed' == 'timed_out'
+   - Root Cause: backend/app/sandbox.py polling loop only checks ("completed", "failed") and does not handle "timed_out" as a valid first-class status.

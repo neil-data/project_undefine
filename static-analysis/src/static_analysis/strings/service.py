@@ -71,6 +71,46 @@ _UNIX_PATH_PATTERN = re.compile(
 _REGISTRY_PATH_PATTERN = re.compile(r"(?:HKEY_[A-Z_]+|HKLM|HKCU|HKCR|HKU|HKCC)\\[^\s\"']+", re.IGNORECASE)
 _DOMAIN_PATTERN = re.compile(r"(?<![A-Z0-9.-])(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}(?![A-Z0-9.-])", re.IGNORECASE)
 
+_NON_DOMAIN_FILE_EXTENSIONS = {
+    "html", "htm", "json", "js", "css", "sh", "bash", "zsh", "py", "pyc",
+    "c", "h", "cpp", "txt", "xml", "yaml", "yml", "md", "log", "conf", "cfg",
+    "ini", "so", "dll", "exe", "bin", "dat", "tmp", "o", "a", "out", "dex",
+    "dexpk", "p", "jar", "zip", "tar", "gz", "bz2", "xz", "7z", "class",
+    "local", "target", "service", "socket", "mount", "timer", "path", "scope",
+    "slice", "lock", "pid", "status", "cache", "bak", "swp", "old", "sym", "map",
+}
+
+
+def _is_valid_domain_candidate(candidate: str, context: str, start: int, end: int) -> bool:
+    if not candidate or len(candidate) < 4 or len(candidate) > 253:
+        return False
+    # Check if inside a path or filename context
+    if start > 0 and context[start - 1] in ("/", "\\", "@", "."):
+        return False
+    if end < len(context) and context[end] in ("/", "\\", ":"):
+        return False
+    if "/" in candidate or "\\" in candidate:
+        return False
+    if candidate.startswith(".") or candidate.endswith("."):
+        return False
+
+    parts = candidate.lower().split(".")
+    if len(parts) < 2:
+        return False
+    tld = parts[-1]
+    # TLD must be alphabetic only (2-24 chars) and not a file extension
+    if not re.match(r"^[a-z]{2,24}$", tld) or tld in _NON_DOMAIN_FILE_EXTENSIONS:
+        return False
+
+    # Check labels
+    for part in parts:
+        if not part or len(part) > 63:
+            return False
+        if not re.match(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", part):
+            return False
+
+    return True
+
 
 def _is_valid_url(url: str) -> bool:
     if len(url) < 10:
@@ -347,6 +387,8 @@ class StringExtractionService:
                 if string_type in (StringType.IPV4, StringType.IPV6) and not self._valid_ip(candidate, string_type):
                     continue
                 if string_type is StringType.UNIX_PATH and len(candidate) < 5:
+                    continue
+                if string_type is StringType.DOMAIN and not _is_valid_domain_candidate(candidate, value, match.start(), match.end()):
                     continue
                 candidate_offset = offset + len(value[: match.start()].encode(encoding))
                 self._add_record(candidate, string_type, candidate_offset, encoding, records)

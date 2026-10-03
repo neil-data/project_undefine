@@ -116,6 +116,7 @@ class MitreTechnique(BaseModel):
     technique_id: str        # e.g. "T1517"
     technique_name: str
     confidence: float
+    evidence_state: Optional[Literal["OBSERVED", "STATIC", "INTEL", "observed", "static", "intel"]] = "STATIC"
 
 
 class CapabilityTag(BaseModel):

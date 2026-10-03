@@ -200,6 +200,7 @@ class ChainVerifier:
         signature = None
         if self.secret_key:
             sample_id = str(metadata.get("sample_id", ""))
+            sample_sha256 = str(metadata.get("sample_sha256", ""))
             task_id = str(metadata.get("task_id", ""))
             sandbox_id = str(metadata.get("sandbox_id", ""))
             exec_mode = str(metadata.get("execution_mode", ""))
@@ -211,7 +212,7 @@ class ChainVerifier:
             fs_diff_hash = str(metadata.get("fs_diff_hash", ""))
             link_data = (
                 f"{link_type.value}:{timestamp}:{data_hash}:{previous_hash}:"
-                f"{sample_id}:{task_id}:{sandbox_id}:{exec_mode}:{dynamic_status}:"
+                f"{sample_id}:{sample_sha256}:{task_id}:{sandbox_id}:{exec_mode}:{dynamic_status}:"
                 f"{evidence_state}:{intel_floor}:{strace_hash}:{pcap_hash}:{fs_diff_hash}"
             )
             signature = self.compute_hmac(link_data)
@@ -244,6 +245,7 @@ class ChainVerifier:
         if link.signature and self.secret_key:
             meta = link.metadata or {}
             sample_id = str(meta.get("sample_id", ""))
+            sample_sha256 = str(meta.get("sample_sha256", ""))
             task_id = str(meta.get("task_id", ""))
             sandbox_id = str(meta.get("sandbox_id", ""))
             exec_mode = str(meta.get("execution_mode", ""))
@@ -256,7 +258,7 @@ class ChainVerifier:
             
             primary_data = (
                 f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:"
-                f"{sample_id}:{task_id}:{sandbox_id}:{exec_mode}:{dynamic_status}:"
+                f"{sample_id}:{sample_sha256}:{task_id}:{sandbox_id}:{exec_mode}:{dynamic_status}:"
                 f"{evidence_state}:{intel_floor}:{strace_hash}:{pcap_hash}:{fs_diff_hash}"
             )
             if self.verify_hmac(primary_data, link.signature):
@@ -264,6 +266,7 @@ class ChainVerifier:
             
             # Backward compatible checks
             fallback_patterns = [
+                f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{sample_id}:{task_id}:{sandbox_id}:{exec_mode}:{dynamic_status}:{evidence_state}:{intel_floor}:{strace_hash}:{pcap_hash}:{fs_diff_hash}",
                 f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{sample_id}:{task_id}:{exec_mode}:{evidence_state}:{intel_floor}",
                 f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{exec_mode}",
                 f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}",
@@ -387,6 +390,7 @@ class ChainVerifier:
                         metadata={
                             "has_data": True,
                             "sample_id": investigation_state.get("sample_id", ""),
+                            "sample_sha256": investigation_state.get("sample_sha256", "") or investigation_state.get("sha256", ""),
                             "task_id": investigation_state.get("task_id", ""),
                             "sandbox_id": investigation_state.get("sandbox_id", ""),
                             "execution_mode": investigation_state.get("execution_mode", ""),

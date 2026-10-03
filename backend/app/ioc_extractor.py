@@ -93,11 +93,6 @@ class IOCExtractor:
             if dst_ip in self.KNOWN_C2_IPS:
                 threat_intel = ThreatIntelligence(
                     known_c2=True,
-                    threat_family="Emotet",
-                    country="US",
-                    asn="AS15169",
-                    organization="Google LLC",
-                    reputation_score=95
                 )
 
             ioc = IOC(
@@ -122,8 +117,6 @@ class IOCExtractor:
             if domain in self.KNOWN_C2_DOMAINS:
                 threat_intel = ThreatIntelligence(
                     known_c2=True,
-                    threat_family="Emotet",
-                    reputation_score=95
                 )
 
             ioc = IOC(

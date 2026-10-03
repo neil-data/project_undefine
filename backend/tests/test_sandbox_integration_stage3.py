@@ -76,7 +76,23 @@ async def test_sandbox_manifest_mismatch_detection(tmp_path, monkeypatch):
     monkeypatch.setenv("SANDBOX_API_TOKEN", "erakshak-sandbox-secret-token")
 
     sample = tmp_path / "sample.bin"
-    sample.write_bytes(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 50)
+    sample_bytes = b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 50
+    sample.write_bytes(sample_bytes)
+    sample_sha256 = hashlib.sha256(sample_bytes).hexdigest()
+
+    import hmac
+    meta_bytes = json.dumps({"sample_sha256": sample_sha256, "status": "completed"}).encode()
+    meta_hash = hashlib.sha256(meta_bytes).hexdigest()
+
+    manifest_core = {
+        "strace.log": "0000000000000000000000000000000000000000000000000000000000000000",
+        "capture.pcap": "1111111111111111111111111111111111111111111111111111111111111111",
+        "fs_diff.json": "2222222222222222222222222222222222222222222222222222222222222222",
+        "meta.json": meta_hash,
+    }
+    canonical = json.dumps(manifest_core, sort_keys=True)
+    manifest_data = dict(manifest_core)
+    manifest_data["_hmac"] = hmac.new(b"erakshak-sandbox-secret-token", canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
     # Mock responses where manifest claims a different hash than artifact content
     async def mock_handler(request: httpx.Request):
@@ -86,11 +102,9 @@ async def test_sandbox_manifest_mismatch_detection(tmp_path, monkeypatch):
         if url.endswith("/jobs/test-job-mismatch"):
             return httpx.Response(200, json={"job_id": "test-job-mismatch", "status": "completed"})
         if url.endswith("/manifest.json"):
-            return httpx.Response(200, json={
-                "strace.log": "0000000000000000000000000000000000000000000000000000000000000000",
-                "capture.pcap": "1111111111111111111111111111111111111111111111111111111111111111",
-                "fs_diff.json": "2222222222222222222222222222222222222222222222222222222222222222",
-            })
+            return httpx.Response(200, json=manifest_data)
+        if url.endswith("/meta.json"):
+            return httpx.Response(200, content=meta_bytes)
         if url.endswith("/strace.log"):
             return httpx.Response(200, text="1000 00:00:00.000000 execve(\"test\", [], []) = 0\n")
         if url.endswith("/capture.pcap"):

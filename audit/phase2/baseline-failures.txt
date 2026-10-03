@@ -1,0 +1,423 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.3, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\Neil\ps4-malware-suite\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8
+configfile: pytest.ini
+plugins: anyio-4.14.2, langsmith-0.10.11, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 28 items
+
+backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_index_html_not_a_domain FAILED [  3%]
+backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_rc_local_not_a_domain PASSED [  7%]
+backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_filesystem_paths_not_domains PASSED [ 10%]
+backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_common_file_extensions_not_domains FAILED [ 14%]
+backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_legitimate_domains_still_detected FAILED [ 17%]
+backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_string_extraction_service_does_not_label_index_html_as_domain FAILED [ 21%]
+backend/tests/test_phase2_regression.py::TestA7PublicDNSResolver::test_a7_8888_recognized_as_public_dns_resolver_in_ioc FAILED [ 25%]
+backend/tests/test_phase2_regression.py::TestA7PublicDNSResolver::test_a7_8888_static_only_not_c2_in_recommendations FAILED [ 28%]
+backend/tests/test_phase2_regression.py::TestA7PublicDNSResolver::test_a7_8888_static_not_high_confidence PASSED [ 32%]
+backend/tests/test_phase2_regression.py::TestA7PublicDNSResolver::test_a7_ordinary_ips_continue_normal_classification PASSED [ 35%]
+backend/tests/test_phase2_regression.py::TestA7PublicDNSResolver::test_a7_dynamic_flagged_evidence_still_represented_for_resolver PASSED [ 39%]
+backend/tests/test_phase2_regression.py::TestA8GeoIPConsistency::test_a8_geoip_hosting_context_alone_not_high FAILED [ 42%]
+backend/tests/test_phase2_regression.py::TestA8GeoIPConsistency::test_a8_geoip_and_ioc_severity_consistent FAILED [ 46%]
+backend/tests/test_phase2_regression.py::TestA8GeoIPConsistency::test_a8_genuine_malicious_intelligence_produces_high_severity FAILED [ 50%]
+backend/tests/test_phase2_regression.py::TestA9ProxyPortsNeutral::test_a9_proxy_ports_static_only_neutral_endpoint FAILED [ 53%]
+backend/tests/test_phase2_regression.py::TestA9ProxyPortsNeutral::test_a9_proxy_ports_alone_do_not_produce_c2_capability PASSED [ 57%]
+backend/tests/test_phase2_regression.py::TestA9ProxyPortsNeutral::test_a9_dynamic_flagged_can_still_elevate_proxy_port PASSED [ 60%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/etc/cron.d/qv3b] FAILED [ 64%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/etc/init.d/qv3b] FAILED [ 67%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/etc/rc%d.d/S90qv3b] FAILED [ 71%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/tmp/.qv3b] FAILED [ 75%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/var/run/.qv3b] FAILED [ 78%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/usr/lib/.qv3b] FAILED [ 82%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_ordinary_paths_not_detected_as_persistence FAILED [ 85%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_static_persistence_surfaced_in_case_data FAILED [ 89%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_static_persistence_does_not_become_observed FAILED [ 92%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_dynamic_persistence_remains_observed FAILED [ 96%]
+backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_mitre_and_capabilities_surface_static_persistence FAILED [100%]
+
+================================== FAILURES ===================================
+___________ TestA6DomainValidation.test_a6_index_html_not_a_domain ____________
+
+self = <test_phase2_regression.TestA6DomainValidation object at 0x0000016A79ACF410>
+
+    def test_a6_index_html_not_a_domain(self):
+>       assert _is_valid_domain("index.html") is False
+E       AssertionError: assert True is False
+E        +  where True = _is_valid_domain('index.html')
+
+backend\tests\test_phase2_regression.py:31: AssertionError
+______ TestA6DomainValidation.test_a6_common_file_extensions_not_domains ______
+
+self = <test_phase2_regression.TestA6DomainValidation object at 0x0000016A79AD2B90>
+
+    def test_a6_common_file_extensions_not_domains(self):
+        files = [
+            "foo.html",
+            "config.json",
+            "script.sh",
+            "main.py",
+            "libcrypto.so",
+            "app.exe",
+            "data.bin",
+            "archive.tar.gz",
+            "test.xml",
+            "style.css",
+        ]
+        for f in files:
+>           assert _is_valid_domain(f) is False, f"Expected {f} NOT to be a domain"
+E           AssertionError: Expected foo.html NOT to be a domain
+E           assert True is False
+E            +  where True = _is_valid_domain('foo.html')
+
+backend\tests\test_phase2_regression.py:62: AssertionError
+______ TestA6DomainValidation.test_a6_legitimate_domains_still_detected _______
+
+self = <test_phase2_regression.TestA6DomainValidation object at 0x0000016A79AD3710>
+
+    def test_a6_legitimate_domains_still_detected(self):
+        valid_domains = [
+            "example.com",
+            "sub.example.com",
+            "example.co.uk",
+            "malware-traffic-analysis.net",
+            "api.github.com",
+            "c2.darknet-nexus.org",
+        ]
+        for d in valid_domains:
+>           assert _is_valid_domain(d) is True, f"Expected {d} to be a valid domain"
+E           AssertionError: Expected example.com to be a valid domain
+E           assert False is True
+E            +  where False = _is_valid_domain('example.com')
+
+backend\tests\test_phase2_regression.py:74: AssertionError
+_ TestA6DomainValidation.test_a6_string_extraction_service_does_not_label_index_html_as_domain _
+
+self = <test_phase2_regression.TestA6DomainValidation object at 0x0000016A79AE5050>
+
+    def test_a6_string_extraction_service_does_not_label_index_html_as_domain(self):
+>       service = StringExtractionService()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: StringExtractionService.__init__() missing 1 required positional argument: 'metadata_service'
+
+backend\tests\test_phase2_regression.py:77: TypeError
+_ TestA7PublicDNSResolver.test_a7_8888_recognized_as_public_dns_resolver_in_ioc _
+
+self = <test_phase2_regression.TestA7PublicDNSResolver object at 0x0000016A79AE45D0>
+
+    def test_a7_8888_recognized_as_public_dns_resolver_in_ioc(self):
+        from backend.app.analysis import _build_ioc_intelligence
+        raw_static = {
+            "sha256": "abcdef1234567890",
+            "submitted_at": "2026-10-03T00:00:00Z",
+            "extracted_strings": {"ips": ["8.8.8.8"], "urls": []},
+        }
+        indicators = {"ips": ["8.8.8.8"], "domains": [], "urls": []}
+        records = _build_ioc_intelligence(raw_static, None, indicators)
+    
+        resolver_recs = [r for r in records if r["indicator"] == "8.8.8.8"]
+        assert len(resolver_recs) == 1
+        rec = resolver_recs[0]
+>       assert "public dns resolver" in rec["related_behavior"].lower()
+E       AssertionError: assert 'public dns resolver' in 'embedded endpoint'
+E        +  where 'embedded endpoint' = <built-in method lower of str object at 0x0000016A5F05BE60>()
+E        +    where <built-in method lower of str object at 0x0000016A5F05BE60> = 'Embedded endpoint'.lower
+
+backend\tests\test_phase2_regression.py:111: AssertionError
+_ TestA7PublicDNSResolver.test_a7_8888_static_only_not_c2_in_recommendations __
+
+self = <test_phase2_regression.TestA7PublicDNSResolver object at 0x0000016A79AE5B10>
+
+    def test_a7_8888_static_only_not_c2_in_recommendations(self):
+        from backend.app.analysis import _generate_recommendations
+        raw_static = {
+            "extracted_strings": {"ips": ["8.8.8.8"]},
+            "yara_matches": [],
+        }
+        network_indicators = {
+            "ips": ["8.8.8.8"],
+            "domains": [],
+            "urls": [],
+            "connections": [],
+        }
+>       recs = _generate_recommendations("MALICIOUS", raw_static, None, network_indicators)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: _generate_recommendations() missing 1 required positional argument: 'network_indicators'
+
+backend\tests\test_phase2_regression.py:127: TypeError
+_____ TestA8GeoIPConsistency.test_a8_geoip_hosting_context_alone_not_high _____
+
+self = <test_phase2_regression.TestA8GeoIPConsistency object at 0x0000016A79AE7450>
+
+    def test_a8_geoip_hosting_context_alone_not_high(self):
+        from backend.app import geoip
+        # Mock http fallback response returning hosting: True for an unrated IP
+        mock_resp = {
+            "status": "success",
+            "country": "United States",
+            "countryCode": "US",
+            "city": "Ashburn",
+            "as": "AS15169 Google LLC",
+            "org": "Google LLC",
+            "isp": "Google LLC",
+            "hosting": True,
+            "proxy": False,
+        }
+        with patch("urllib.request.urlopen") as mock_url:
+            mock_cm = MagicMock()
+            mock_cm.status = 200
+            import json
+            mock_cm.read.return_value = json.dumps(mock_resp).encode("utf-8")
+            mock_url.return_value.__enter__.return_value = mock_cm
+    
+            res = geoip._lookup_http_fallback("8.8.8.8")
+            assert res is not None
+            assert res["is_hosting"] is True
+            # Must NOT independently declare threat_level="HIGH" purely due to hosting
+>           assert res["threat_level"] != "HIGH"
+E           AssertionError: assert 'HIGH' != 'HIGH'
+
+backend\tests\test_phase2_regression.py:196: AssertionError
+______ TestA8GeoIPConsistency.test_a8_geoip_and_ioc_severity_consistent _______
+
+self = <test_phase2_regression.TestA8GeoIPConsistency object at 0x0000016A79AE6950>
+
+    def test_a8_geoip_and_ioc_severity_consistent(self):
+        from backend.app import geoip
+>       from backend.app.analysis import _build_ioc_intelligence, _reconcile_geoip_severity
+E       ImportError: cannot import name '_reconcile_geoip_severity' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:200: ImportError
+_ TestA8GeoIPConsistency.test_a8_genuine_malicious_intelligence_produces_high_severity _
+
+self = <test_phase2_regression.TestA8GeoIPConsistency object at 0x0000016A79AE7590>
+
+    def test_a8_genuine_malicious_intelligence_produces_high_severity(self):
+>       from backend.app.analysis import _reconcile_geoip_severity
+E       ImportError: cannot import name '_reconcile_geoip_severity' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:219: ImportError
+__ TestA9ProxyPortsNeutral.test_a9_proxy_ports_static_only_neutral_endpoint ___
+
+self = <test_phase2_regression.TestA9ProxyPortsNeutral object at 0x0000016A79AE79D0>
+
+    def test_a9_proxy_ports_static_only_neutral_endpoint(self):
+        from backend.app.analysis import _build_ioc_intelligence
+        raw_static = {
+            "extracted_strings": {
+                "urls": ["http://1.2.3.4:8080/path", "http://1.2.3.4:3128", "http://1.2.3.4:8888/test"],
+                "ips": ["1.2.3.4"],
+            }
+        }
+        indicators = {
+            "ips": ["1.2.3.4"],
+            "domains": [],
+            "urls": ["http://1.2.3.4:8080/path", "http://1.2.3.4:3128", "http://1.2.3.4:8888/test"],
+        }
+        records = _build_ioc_intelligence(raw_static, None, indicators)
+    
+        url_recs = [r for r in records if r["type"] == "URL"]
+        assert len(url_recs) == 3
+        for r in url_recs:
+            assert r["classification"] != "MALICIOUS"
+>           assert r["classification"] != "SUSPICIOUS", f"Port in {r['indicator']} should not cause SUSPICIOUS classification"
+E           AssertionError: Port in http://1.2.3.4:8080/path should not cause SUSPICIOUS classification
+E           assert 'SUSPICIOUS' != 'SUSPICIOUS'
+
+backend\tests\test_phase2_regression.py:260: AssertionError
+_ TestA10StaticPersistencePaths.test_a10_known_persistence_paths_detected[/etc/cron.d/qv3b] _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF14D0>
+path = '/etc/cron.d/qv3b'
+
+    @pytest.mark.parametrize("path", [
+        "/etc/cron.d/qv3b",
+        "/etc/init.d/qv3b",
+        "/etc/rc%d.d/S90qv3b",
+        "/tmp/.qv3b",
+        "/var/run/.qv3b",
+        "/usr/lib/.qv3b",
+    ])
+    def test_a10_known_persistence_paths_detected(self, path: str):
+>       from backend.app.analysis import _is_persistence_path
+E       ImportError: cannot import name '_is_persistence_path' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:326: ImportError
+_ TestA10StaticPersistencePaths.test_a10_known_persistence_paths_detected[/etc/init.d/qv3b] _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF1750>
+path = '/etc/init.d/qv3b'
+
+    @pytest.mark.parametrize("path", [
+        "/etc/cron.d/qv3b",
+        "/etc/init.d/qv3b",
+        "/etc/rc%d.d/S90qv3b",
+        "/tmp/.qv3b",
+        "/var/run/.qv3b",
+        "/usr/lib/.qv3b",
+    ])
+    def test_a10_known_persistence_paths_detected(self, path: str):
+>       from backend.app.analysis import _is_persistence_path
+E       ImportError: cannot import name '_is_persistence_path' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:326: ImportError
+_ TestA10StaticPersistencePaths.test_a10_known_persistence_paths_detected[/etc/rc%d.d/S90qv3b] _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF19D0>
+path = '/etc/rc%d.d/S90qv3b'
+
+    @pytest.mark.parametrize("path", [
+        "/etc/cron.d/qv3b",
+        "/etc/init.d/qv3b",
+        "/etc/rc%d.d/S90qv3b",
+        "/tmp/.qv3b",
+        "/var/run/.qv3b",
+        "/usr/lib/.qv3b",
+    ])
+    def test_a10_known_persistence_paths_detected(self, path: str):
+>       from backend.app.analysis import _is_persistence_path
+E       ImportError: cannot import name '_is_persistence_path' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:326: ImportError
+_ TestA10StaticPersistencePaths.test_a10_known_persistence_paths_detected[/tmp/.qv3b] _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF1C50>
+path = '/tmp/.qv3b'
+
+    @pytest.mark.parametrize("path", [
+        "/etc/cron.d/qv3b",
+        "/etc/init.d/qv3b",
+        "/etc/rc%d.d/S90qv3b",
+        "/tmp/.qv3b",
+        "/var/run/.qv3b",
+        "/usr/lib/.qv3b",
+    ])
+    def test_a10_known_persistence_paths_detected(self, path: str):
+>       from backend.app.analysis import _is_persistence_path
+E       ImportError: cannot import name '_is_persistence_path' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:326: ImportError
+_ TestA10StaticPersistencePaths.test_a10_known_persistence_paths_detected[/var/run/.qv3b] _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF1ED0>
+path = '/var/run/.qv3b'
+
+    @pytest.mark.parametrize("path", [
+        "/etc/cron.d/qv3b",
+        "/etc/init.d/qv3b",
+        "/etc/rc%d.d/S90qv3b",
+        "/tmp/.qv3b",
+        "/var/run/.qv3b",
+        "/usr/lib/.qv3b",
+    ])
+    def test_a10_known_persistence_paths_detected(self, path: str):
+>       from backend.app.analysis import _is_persistence_path
+E       ImportError: cannot import name '_is_persistence_path' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:326: ImportError
+_ TestA10StaticPersistencePaths.test_a10_known_persistence_paths_detected[/usr/lib/.qv3b] _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF2150>
+path = '/usr/lib/.qv3b'
+
+    @pytest.mark.parametrize("path", [
+        "/etc/cron.d/qv3b",
+        "/etc/init.d/qv3b",
+        "/etc/rc%d.d/S90qv3b",
+        "/tmp/.qv3b",
+        "/var/run/.qv3b",
+        "/usr/lib/.qv3b",
+    ])
+    def test_a10_known_persistence_paths_detected(self, path: str):
+>       from backend.app.analysis import _is_persistence_path
+E       ImportError: cannot import name '_is_persistence_path' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:326: ImportError
+_ TestA10StaticPersistencePaths.test_a10_ordinary_paths_not_detected_as_persistence _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF2690>
+
+    def test_a10_ordinary_paths_not_detected_as_persistence(self):
+>       from backend.app.analysis import _is_persistence_path
+E       ImportError: cannot import name '_is_persistence_path' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:330: ImportError
+_ TestA10StaticPersistencePaths.test_a10_static_persistence_surfaced_in_case_data _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF2C50>
+
+    def test_a10_static_persistence_surfaced_in_case_data(self):
+>       from backend.app.analysis import _extract_persistence_artifacts
+E       ImportError: cannot import name '_extract_persistence_artifacts' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:343: ImportError
+_ TestA10StaticPersistencePaths.test_a10_static_persistence_does_not_become_observed _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF3250>
+
+    def test_a10_static_persistence_does_not_become_observed(self):
+>       from backend.app.analysis import _extract_persistence_artifacts
+E       ImportError: cannot import name '_extract_persistence_artifacts' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:365: ImportError
+_ TestA10StaticPersistencePaths.test_a10_dynamic_persistence_remains_observed _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF3850>
+
+    def test_a10_dynamic_persistence_remains_observed(self):
+>       from backend.app.analysis import _extract_persistence_artifacts
+E       ImportError: cannot import name '_extract_persistence_artifacts' from 'backend.app.analysis' (C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\backend\app\analysis.py)
+
+backend\tests\test_phase2_regression.py:378: ImportError
+_ TestA10StaticPersistencePaths.test_a10_mitre_and_capabilities_surface_static_persistence _
+
+self = <test_phase2_regression.TestA10StaticPersistencePaths object at 0x0000016A79AF3E50>
+
+    def test_a10_mitre_and_capabilities_surface_static_persistence(self):
+        from agents.mitre_mapper.mitre_rules import map_to_mitre
+        from agents.capability_classifier.capability_rules import classify_capabilities
+        from agents.orchestrator.schema import StaticAnalysisOutput, ExtractedStrings
+        static = StaticAnalysisOutput(
+            sample_id="test",
+            sha256="1234567890abcdef",
+            platform="linux",
+            file_type="elf",
+            file_size_bytes=1000,
+            submitted_at="2026-10-03T00:00:00Z",
+            extracted_strings=ExtractedStrings(
+                suspicious_keywords=["/etc/init.d/qv3b", "/tmp/.qv3b"],
+            ),
+        )
+        mitre_hits = map_to_mitre(static, None)
+        caps = classify_capabilities(static, None)
+    
+        # T1037 / T1543 or T1564.001 should hit with STATIC evidence_state
+        init_mitre = [m for m in mitre_hits if m.technique_id in ("T1037", "T1543.002", "T1564.001")]
+>       assert len(init_mitre) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+
+backend\tests\test_phase2_regression.py:406: AssertionError
+=========================== short test summary info ===========================
+FAILED backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_index_html_not_a_domain
+FAILED backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_common_file_extensions_not_domains
+FAILED backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_legitimate_domains_still_detected
+FAILED backend/tests/test_phase2_regression.py::TestA6DomainValidation::test_a6_string_extraction_service_does_not_label_index_html_as_domain
+FAILED backend/tests/test_phase2_regression.py::TestA7PublicDNSResolver::test_a7_8888_recognized_as_public_dns_resolver_in_ioc
+FAILED backend/tests/test_phase2_regression.py::TestA7PublicDNSResolver::test_a7_8888_static_only_not_c2_in_recommendations
+FAILED backend/tests/test_phase2_regression.py::TestA8GeoIPConsistency::test_a8_geoip_hosting_context_alone_not_high
+FAILED backend/tests/test_phase2_regression.py::TestA8GeoIPConsistency::test_a8_geoip_and_ioc_severity_consistent
+FAILED backend/tests/test_phase2_regression.py::TestA8GeoIPConsistency::test_a8_genuine_malicious_intelligence_produces_high_severity
+FAILED backend/tests/test_phase2_regression.py::TestA9ProxyPortsNeutral::test_a9_proxy_ports_static_only_neutral_endpoint
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/etc/cron.d/qv3b]
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/etc/init.d/qv3b]
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/etc/rc%d.d/S90qv3b]
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/tmp/.qv3b]
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/var/run/.qv3b]
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_known_persistence_paths_detected[/usr/lib/.qv3b]
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_ordinary_paths_not_detected_as_persistence
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_static_persistence_surfaced_in_case_data
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_static_persistence_does_not_become_observed
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_dynamic_persistence_remains_observed
+FAILED backend/tests/test_phase2_regression.py::TestA10StaticPersistencePaths::test_a10_mitre_and_capabilities_surface_static_persistence
+======================== 21 failed, 7 passed in 3.97s =========================

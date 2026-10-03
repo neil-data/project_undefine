@@ -1,0 +1,96 @@
+======================================================================
+E-RAKSHAK PROJECT AUDIT: PHASE 0 TEST RESULTS BASELINE
+======================================================================
+Recorded at: 2026-10-03 11:25:13 +05:30
+Environment: Windows 11, Python 3.11.3 (venv: C:\Users\Neil\ps4-malware-suite\venv)
+Test Runner: pytest 8.4.2, pluggy 1.6.0
+Plugins: anyio-4.14.2, langsmith-0.10.11, asyncio-1.4.0
+
+----------------------------------------------------------------------
+1. Official Test Command: Main Suite (pytest.ini)
+----------------------------------------------------------------------
+Command:
+C:\Users\Neil\ps4-malware-suite\venv\Scripts\python.exe -m pytest
+
+Configured testpaths (pytest.ini):
+- agents
+- dynamic-sandbox/stages
+- dynamic-sandbox/hooks
+- static-analysis/tests
+- backend/tests
+- ingestion
+
+Result:
+================= 836 passed, 1 warning in 117.52s (0:01:57) ==================
+
+Breakdown by Test Package:
+- agents/capability_classifier/test_capability_rules.py: 17 passed
+- agents/investigation_engine/test_chain_verification.py: 19 passed
+- agents/investigation_engine/test_investigation_engine.py: 10 passed
+- agents/mitre_mapper/test_mitre_rules.py: 21 passed
+- agents/narrative_agent/test_narrative_agent.py: 5 passed
+- agents/orchestrator/test_cross_platform_rules.py: 13 passed
+- agents/orchestrator/test_integration_pipeline.py: 3 passed
+- agents/orchestrator/test_risk_scoring.py: 8 passed
+- dynamic-sandbox/stages/test_monitors.py: 52 passed
+- dynamic-sandbox/stages/test_stages.py: 43 passed
+- dynamic-sandbox/hooks/test_hooks.py: 49 passed
+- dynamic-sandbox/hooks/test_phase3_windows_engine.py: 35 passed
+- dynamic-sandbox/hooks/test_phase4_android_engine.py: 37 passed
+- dynamic-sandbox/hooks/test_phase5_6_hooks.py: 55 passed
+- dynamic-sandbox/hooks/test_phase6_android_pipeline.py: 79 passed
+- static-analysis/tests/test_apk_extraction.py: 7 passed
+- static-analysis/tests/test_classification.py: 25 passed
+- static-analysis/tests/test_container_scanning.py: 15 passed
+- static-analysis/tests/test_detection.py: 6 passed
+- static-analysis/tests/test_engine_integration.py: 7 passed
+- static-analysis/tests/test_entropy_analysis.py: 15 passed
+- static-analysis/tests/test_ioc_extraction.py: 65 passed
+- static-analysis/tests/test_packing.py: 7 passed
+- static-analysis/tests/test_storage_and_pipeline.py: 18 passed
+- static-analysis/tests/test_strings_explain.py: 10 passed
+- static-analysis/tests/test_yara_detection.py: 24 passed
+- backend/tests/test_elf_pipeline_defensible.py: 16 passed
+- backend/tests/test_elf_review_fixes.py: 7 passed
+- backend/tests/test_evidence_correlation.py: 4 passed
+- backend/tests/test_forensic_pipeline_fixes.py: 5 passed
+- backend/tests/test_live_monitoring.py: 18 passed
+- backend/tests/test_no_simulation_guard.py: 3 passed
+- backend/tests/test_part2_integration.py: 36 passed
+- backend/tests/test_pdf_generation.py: 5 passed
+- backend/tests/test_sandbox_integration_stage3.py: 3 passed
+- backend/tests/test_strace_parser_stage1.py: 6 passed
+- ingestion/test_gateway.py: 30 passed
+- ingestion/test_india_scam_triage.py: 12 passed
+- ingestion/test_pipeline_e2e.py: 10 passed
+- ingestion/test_validation.py: 36 passed
+
+----------------------------------------------------------------------
+2. Sandbox Host Test Suite
+----------------------------------------------------------------------
+Command:
+C:\Users\Neil\ps4-malware-suite\venv\Scripts\python.exe -m pytest sandbox-host/tests
+
+Result:
+======================== 11 passed, 1 warning in 3.65s ========================
+
+Breakdown:
+- sandbox-host/tests/test_sandbox_host.py: 11 passed
+
+----------------------------------------------------------------------
+3. Frontend Lint & Build Suite
+----------------------------------------------------------------------
+Command:
+npm --prefix frontend run lint (tsc --noEmit)
+Result: Exit Code 0 (clean, 0 type errors)
+
+----------------------------------------------------------------------
+4. Combined Python Test Totals
+----------------------------------------------------------------------
+Total Tests Executed: 847
+Passed: 847
+Failed: 0
+Skipped: 0
+Errors: 0
+Total Duration: ~121s
+======================================================================

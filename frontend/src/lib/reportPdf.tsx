@@ -311,7 +311,11 @@ export async function generateForensicPDF(
     const isFailed = d.dynamic_status === "failed";
 
     if (isUnavailable || isFailed) {
-      const reason = d.failure_reason || d.message || d.details || (isUnavailable ? "sandbox not configured" : "Detonation failed");
+      let reason = d.failure_reason || d.message || d.details || (isUnavailable ? "sandbox not configured" : "Detonation failed");
+      const prefix = "Dynamic analysis not performed: ";
+      if (typeof reason === "string" && reason.startsWith(prefix)) {
+        reason = reason.slice(prefix.length);
+      }
       dynRows.push(
         `<div style="background:#fff1f0;border:1px solid #ffa39e;color:#cf1322;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:9.5px;font-weight:bold;">Dynamic analysis not performed: ${escapeHtml(reason)}</div>`
       );
@@ -324,7 +328,7 @@ export async function generateForensicPDF(
     if (dynMessage && !isUnavailable && !isFailed) dynRows.push(`<b>${t.details}:</b> ${escapeHtml(dynMessage)}`);
     if (value(d.task_id, "") !== "") dynRows.push(`<b>Task ID:</b> ${escapeHtml(d.task_id)}`);
     if (d.sandbox_url) dynRows.push(`<b>Sandbox:</b> ${escapeHtml(d.sandbox_url)}`);
-    if (d.duration_seconds !== undefined)
+    if (d.duration_seconds != null && d.duration_seconds !== undefined && !isNaN(Number(d.duration_seconds)))
       dynRows.push(`<b>Duration:</b> ${escapeHtml(String(d.duration_seconds))}s`);
 
     // Limitations list
@@ -372,11 +376,19 @@ export async function generateForensicPDF(
   }
 
   // ---- Geo-IP attribution ------------------------------------------------
+  const allUnconfigured = geoRecords.length > 0 && geoRecords.every((g: any) => g.status === "database_not_configured");
+  const unconfiguredBanner = (geoRecords.length === 0 || allUnconfigured)
+    ? `<div style="font-size:9.5px;color:#68778c;background:#f5f7fa;border:1px solid #dcdfe6;border-radius:4px;padding:6px 10px;margin-bottom:6px;">
+        ${language === "gu" ? "GeoIP ડેટાબેઝ રૂપરેખાંકિત નથી (GEOIP_DB_PATH સેટ કરો)." : "Offline GeoIP database is not configured. Geographic and ASN attribution is unavailable."}
+       </div>`
+    : "";
+
   const geoHtml = geoRecords.length
-    ? `<table><thead><tr><th>IP</th><th>${t.location}</th><th>${t.ispAsn}</th><th>${t.flags}</th></tr></thead><tbody>${geoRecords
+    ? `${unconfiguredBanner}<table><thead><tr><th>IP</th><th>${t.location}</th><th>${t.ispAsn}</th><th>${t.flags}</th></tr></thead><tbody>${geoRecords
         .map((g: any) => {
           const gip = escapeHtml(g.ip ?? unavailable);
           const privateIp = g.ip && isPrivateIp(g.ip);
+          const isDbUnconfigured = g.status === "database_not_configured";
           const locParts = [g.city, g.region, g.country].filter(Boolean);
           if (locParts.length === 0 && g.country_iso) locParts.push(g.country_iso);
           if (locParts.length === 0 && (g.latitude != null || g.longitude != null))
@@ -385,6 +397,8 @@ export async function generateForensicPDF(
             ? `<span class="muted">${
                 language === "gu" ? "આંતરિક / ખાનગી નેટવર્ક" : "Internal / Private Network"
               }</span>`
+            : isDbUnconfigured
+            ? `<span class="muted">${language === "gu" ? "ડેટાબેઝ રૂપરેખાંકિત નથી" : "Database unconfigured"}</span>`
             : locParts.length
             ? escapeHtml(locParts.join(", "))
             : `<span class="muted">${escapeHtml(unavailable)}</span>`;
@@ -392,6 +406,8 @@ export async function generateForensicPDF(
             ? `<span class="muted">${
                 language === "gu" ? "RFC 1918 / RFC 4193" : "RFC 1918 / RFC 4193"
               }</span>`
+            : isDbUnconfigured
+            ? `<span class="muted">${language === "gu" ? "ડેટાબેઝ રૂપરેખાંકિત નથી" : "Database unconfigured"}</span>`
             : [g.isp || g.asn_org, g.asn != null ? `AS${g.asn}` : ""]
                 .filter(Boolean)
                 .map(escapeHtml)
@@ -409,7 +425,7 @@ export async function generateForensicPDF(
           }</td></tr>`;
         })
         .join("")}</tbody></table>`
-    : `<p class="muted">${t.unavailable}</p>`;
+    : `${unconfiguredBanner}<p class="muted">${t.unavailable}</p>`;
 
   const findings = threat?.key_findings ?? [];
   const recommendations = ai?.recommendations ?? [];
@@ -773,11 +789,21 @@ export async function generateForensicPDF(
           )}`
       )}
       <h3>${t.explainedStrings}</h3>
-      ${list(
-        activeCase.explainedStrings ?? [],
-        unavailable,
-        (s: any) => `<span class="hash">${escapeHtml(s.value)}</span> - ${escapeHtml(s.explanation)}`
-      )}
+      ${(() => {
+        const rawStrings = activeCase.explainedStrings ?? [];
+        const maxDisplay = 20;
+        const displayStrings = rawStrings.slice(0, maxDisplay);
+        const overflow = rawStrings.length - displayStrings.length;
+        const listHtml = list(
+          displayStrings,
+          unavailable,
+          (s: any) => `<span class="hash">${escapeHtml(s.value)}</span> - ${escapeHtml(s.explanation)}`
+        );
+        const overflowHtml = overflow > 0
+          ? `<p class="muted" style="margin-top:4px;font-size:9.5px;">Showing top ${maxDisplay} of ${rawStrings.length} explained strings (+${overflow} additional strings omitted for PDF layout; complete list preserved in raw JSON).</p>`
+          : "";
+        return listHtml + overflowHtml;
+      })()}
     </div>
   `);
 
@@ -853,10 +879,14 @@ export async function generateForensicPDF(
         }
         ${
           timeline.length
-            ? `<h3>Evidence timeline</h3><table><thead><tr><th>Timestamp</th><th>Event</th><th>Source</th><th>Indicator</th></tr></thead><tbody>${timeline
+            ? `<h3>Evidence timeline</h3>
+               ${timeline.some((item: any) => String(item.timestamp || "").includes("approx") || String(item.timestamp || "").startsWith("+"))
+                 ? `<p class="muted" style="font-size:9.5px;margin-bottom:4px;">* Event timestamps for runtime trace reflect approximate execution sequence where exact timestamps were unrecorded.</p>`
+                 : ""}
+               <table><thead><tr><th style="width:36px;">#</th><th style="width:110px;">Timestamp</th><th>Event</th><th>Source</th><th>Indicator</th></tr></thead><tbody>${timeline
                 .map(
-                  (item: any) =>
-                    `<tr><td>${escapeHtml(item.timestamp || "—")}</td><td>${escapeHtml(
+                  (item: any, idx: number) =>
+                    `<tr><td>${escapeHtml(String(item.seq ?? idx + 1))}</td><td>${escapeHtml(item.timestamp || "—")}</td><td>${escapeHtml(
                       item.event || "—"
                     )}</td><td>${escapeHtml(item.source || "—")}</td><td>${escapeHtml(
                       item.indicator || "—"

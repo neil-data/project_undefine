@@ -13,7 +13,7 @@ def test_matching_static_and_dynamic_ip_is_corroborated():
     correlations = _build_evidence_correlations(static, dynamic, indicators, [])
     iocs = _build_ioc_intelligence(static, dynamic, indicators)
 
-    assert correlations[0]["evidence_state"] == "CORROBORATED"
+    assert correlations[0]["evidence_state"] == "OBSERVED"
     assert iocs[0]["source"] == "Static + Dynamic"
 
 
@@ -22,7 +22,7 @@ def test_static_only_endpoint_is_not_claimed_as_c2():
     iocs = _build_ioc_intelligence(static, None, {"ips": ["203.0.113.5"], "domains": [], "urls": []})
 
     assert iocs[0]["classification"] == "UNKNOWN"
-    assert iocs[0]["evidence_state"] == "OBSERVED"
+    assert iocs[0]["evidence_state"] == "STATIC"
 
 
 def test_known_android_domain_is_classified_benign():

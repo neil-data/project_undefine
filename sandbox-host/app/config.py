@@ -12,6 +12,8 @@ ARTIFACTS_DIR = Path(os.environ.get("SANDBOX_ARTIFACTS_DIR", str(Path(__file__).
 INETSIM_IP = os.environ.get("INETSIM_IP", "192.168.100.2")
 CANARY_URL = os.environ.get("CANARY_URL", "http://1.1.1.1")
 ROOTFS_BASE_DIR = Path(os.environ.get("SANDBOX_ROOTFS_DIR", "/opt/sandbox/rootfs"))
+MAX_CONCURRENT_WORKERS = int(os.environ.get("SANDBOX_MAX_WORKERS", "1"))
+MAX_ARTIFACT_SIZE_BYTES = int(os.environ.get("SANDBOX_MAX_ARTIFACT_SIZE", str(50 * 1024 * 1024)))  # 50 MB
 
 SUPPORTED_ARCHITECTURES = {
     "x86_64",

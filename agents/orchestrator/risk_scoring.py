@@ -122,11 +122,37 @@ def compute_risk_score(
     yara_score = min(yara_score, YARA_CAP)
 
     if is_elf:
-        # Static cap
-        static_contrib = yara_score
-        if getattr(static, "static_risk_flags", []):
-            static_contrib += 10
-        static_contrib = min(static_contrib, SCORE_STATIC_CAP)
+        # Separate static vs observed MITRE and capabilities
+        static_mitre = [
+            m for m in mitre
+            if getattr(m, "evidence_state", "STATIC") == "STATIC"
+            or (isinstance(m, dict) and m.get("evidence_state", "STATIC") == "STATIC")
+        ]
+        observed_mitre = [
+            m for m in mitre
+            if getattr(m, "evidence_state", "STATIC") == "OBSERVED"
+            or (isinstance(m, dict) and m.get("evidence_state", "STATIC") == "OBSERVED")
+        ]
+
+        static_caps = [
+            c for c in capabilities
+            if (getattr(c, "evidence_state", "STATIC") or "STATIC").upper() == "STATIC"
+            or (isinstance(c, dict) and (c.get("evidence_state") or "STATIC").upper() == "STATIC")
+        ]
+        observed_caps = [
+            c for c in capabilities
+            if (getattr(c, "evidence_state", "STATIC") or "STATIC").upper() == "OBSERVED"
+            or (isinstance(c, dict) and (c.get("evidence_state") or "STATIC").upper() == "OBSERVED")
+        ]
+
+        # Combined static points: YARA + static MITRE + static capabilities capped together at SCORE_STATIC_CAP (20)
+        static_mitre_pts = len(static_mitre) * MITRE_TECHNIQUE_WEIGHT
+        static_cap_pts = sum(
+            int((c.confidence if hasattr(c, "confidence") else c.get("confidence", 0)) * CAPABILITY_CONFIDENCE_MULTIPLIER)
+            for c in static_caps
+        )
+        combined_static_raw = yara_score + static_mitre_pts + static_cap_pts
+        static_contrib = min(combined_static_raw, SCORE_STATIC_CAP)
 
         # Observed dynamic behaviors
         dyn_contrib = 0
@@ -135,7 +161,7 @@ def compute_risk_score(
             procs_str = str(getattr(dynamic, "process_tree", [])).lower()
             apis_str = str(getattr(dynamic, "api_calls", [])).lower()
             files_str = str(getattr(dynamic, "files_written", [])).lower()
-            pers_str = str(getattr(dynamic, "persistence_artifacts", [])).lower()
+            pers_artifacts = getattr(dynamic, "persistence_artifacts", []) or []
             conns = getattr(dynamic, "network_connections", [])
 
             # download-and-exec
@@ -147,7 +173,7 @@ def compute_risk_score(
                 dyn_contrib += 10
 
             # persistence write
-            if pers_str or any(p in files_str for p in ("cron", "rc.local", "systemd", "init.d")):
+            if pers_artifacts or any(p in files_str for p in ("cron", "rc.local", "systemd", "init.d")):
                 dyn_contrib += SCORE_OBSERVED_PERSISTENCE
 
             # mining
@@ -168,11 +194,14 @@ def compute_risk_score(
 
             dyn_contrib = min(dyn_contrib, SCORE_OBSERVED_CAP)
 
-        # MITRE & Capabilities
-        mitre_contrib = len(mitre) * MITRE_TECHNIQUE_WEIGHT
-        cap_contrib = sum(int(c.confidence * CAPABILITY_CONFIDENCE_MULTIPLIER) for c in capabilities)
+        # Dynamic MITRE & Capabilities
+        dyn_mitre_pts = len(observed_mitre) * MITRE_TECHNIQUE_WEIGHT
+        dyn_cap_pts = sum(
+            int((c.confidence if hasattr(c, "confidence") else c.get("confidence", 0)) * CAPABILITY_CONFIDENCE_MULTIPLIER)
+            for c in observed_caps
+        )
 
-        total_score = static_contrib + dyn_contrib + mitre_contrib + cap_contrib
+        total_score = static_contrib + dyn_contrib + dyn_mitre_pts + dyn_cap_pts
         return max(MIN_SCORE, min(total_score, MAX_SCORE))
 
     # Standard non-ELF scoring logic

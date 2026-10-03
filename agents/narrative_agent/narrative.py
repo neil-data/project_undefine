@@ -73,6 +73,20 @@ FORBIDDEN_UNGROUNDED_TERMS = (
     "/usr/lib/.x11-auth", "@reboot", "/etc/shadow",
 )
 
+_REFUSAL_PHRASES = (
+    "i'm sorry", "i am sorry", "i cannot assist", "i can't assist",
+    "i cannot help", "i can't help", "unable to assist", "unable to help",
+    "cannot analyze malware", "can't analyze malware", "against my safety guidelines",
+    "as an ai", "as a language model"
+)
+
+
+def _is_refusal_text(text: str) -> bool:
+    if not text:
+        return True
+    low = text.lower()
+    return any(p in low for p in _REFUSAL_PHRASES)
+
 
 def _is_grounded(
     text: str,
@@ -82,6 +96,8 @@ def _is_grounded(
     victim_impact: Optional[str] = None,
 ) -> bool:
     """Validate that text is strictly grounded in raw evidence with whole-word matching."""
+    if _is_refusal_text(text):
+        return False
     import re
     lowered = text.lower()
     raw_evidence_corpus = []
@@ -225,8 +241,11 @@ def generate_narrative(
             )
         )
         if is_quiet:
-            sig = (malware_bazaar or {}).get("signature") or "unclassified"
-            return f"Specific behavior could not be determined from the available evidence; classification rests on threat-intelligence matches ({sig}) and static rule hits."
+            mb_found = malware_bazaar and malware_bazaar.get("found")
+            sig = (malware_bazaar or {}).get("signature")
+            if mb_found and sig:
+                return f"Specific behavior could not be determined from the available evidence; classification rests on threat-intelligence matches ({sig}) and static rule hits."
+            return "Specific behavior could not be determined from the available evidence; classification rests strictly on static rule hits as no external threat-intelligence match was found."
 
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -285,19 +304,29 @@ def generate_narrative(
                 if _is_grounded(text, static, dynamic, risk_score, victim_impact):
                     return _clean_or_render_text(text)
 
-                # Attempt 2: Retry with explicit grounding correction
-                correction_prompt = (
-                    f"<untrusted_sample_data>\n{findings}\n</untrusted_sample_data>\n\n"
-                    f"Correction: Your previous summary contained technical mechanisms or contradictions not present in the findings. "
-                    f"You must strictly ground your summary ONLY in the evidence provided above in <untrusted_sample_data>. "
-                    f"Risk score is {risk_score}/100, victim impact is {victim_impact or 'medium'}. "
-                    f"Do not mention systemd, rc.local, pkexec, xor, named pipes, strace, ltrace, gdb, CVE-2022-0847, or /usr/lib/.X11-auth. "
-                    f"Return strict JSON with executive_summary and technical_steps."
-                )
+                # Attempt 2: Retry with explicit grounding or neutral defensive framing
+                was_refusal = _is_refusal_text(text)
+                if was_refusal:
+                    retry_sys = "You are a forensic analyst generating a defensive forensic report from verified evidence indicators. Do not produce instructions or code."
+                    correction_prompt = (
+                        f"Provide a defensive forensic analysis strictly for these verified evidence findings in JSON format:\n"
+                        f"<evidence_findings>\n{findings}\n</evidence_findings>\n\n"
+                        f"Return strict JSON with executive_summary and technical_steps."
+                    )
+                else:
+                    retry_sys = system_instruction
+                    correction_prompt = (
+                        f"<untrusted_sample_data>\n{findings}\n</untrusted_sample_data>\n\n"
+                        f"Correction: Your previous summary contained technical mechanisms or contradictions not present in the findings. "
+                        f"You must strictly ground your summary ONLY in the evidence provided above in <untrusted_sample_data>. "
+                        f"Risk score is {risk_score}/100, victim impact is {victim_impact or 'medium'}. "
+                        f"Do not mention systemd, rc.local, pkexec, xor, named pipes, strace, ltrace, gdb, CVE-2022-0847, or /usr/lib/.X11-auth. "
+                        f"Return strict JSON with executive_summary and technical_steps."
+                    )
                 retry_resp = client.chat.completions.create(
                     model=model_name,
                     messages=[
-                        {"role": "system", "content": system_instruction},
+                        {"role": "system", "content": retry_sys},
                         {"role": "user", "content": correction_prompt},
                     ],
                     temperature=0.1,
@@ -308,7 +337,7 @@ def generate_narrative(
                 if _is_grounded(retry_text, static, dynamic, risk_score, victim_impact):
                     return _clean_or_render_text(retry_text)
 
-                # Ungrounded after retry -> use deterministic template fallback
+                # Ungrounded/refusal after retry -> use deterministic template fallback
                 return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact)
 
             except Exception as ex:

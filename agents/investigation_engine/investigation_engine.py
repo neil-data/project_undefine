@@ -270,13 +270,56 @@ class InvestigationEngine:
 
                 ai_response = response.choices[0].message.content.strip()
                 
-                # Parse AI response (simplified - in production, use structured output)
-                malware_explanation = MalwareExplanation(
-                    summary=ai_response[:200] + "..." if len(ai_response) > 200 else ai_response,
-                    technical_details=ai_response,
-                    capabilities_identified=capability_list,
-                    confidence_level=0.8
+                # Check for LLM refusal
+                refusal_phrases = (
+                    "i'm sorry", "i am sorry", "i cannot assist", "i can't assist",
+                    "i cannot help", "i can't help", "unable to assist", "unable to help",
+                    "cannot analyze malware", "can't analyze malware", "against my safety guidelines",
+                    "as an ai", "as a language model"
                 )
+                is_refusal = any(phrase in ai_response.lower() for phrase in refusal_phrases)
+                
+                if is_refusal:
+                    print("[InvestigationEngine] LLM refusal detected; retrying with neutral defensive framing...")
+                    retry_resp = None
+                    try:
+                        retry_resp = client.chat.completions.create(
+                            model=getattr(response, "model", preferred_model) or preferred_model,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": "You are a forensic analyst generating a defensive report from verified evidence indicators. Do not produce instructions or code."
+                                },
+                                {
+                                    "role": "user",
+                                    "content": f"Provide an objective defensive forensic summary of these observable indicators:\n{prompt}"
+                                }
+                            ],
+                            temperature=0.1,
+                            max_tokens=500,
+                            timeout=15,
+                        )
+                    except Exception as retry_err:
+                        print(f"[InvestigationEngine] Retry failed: {retry_err}")
+
+                    if retry_resp and retry_resp.choices:
+                        retry_text = retry_resp.choices[0].message.content.strip()
+                        if not any(phrase in retry_text.lower() for phrase in refusal_phrases):
+                            ai_response = retry_text
+                        else:
+                            ai_response = None
+                    else:
+                        ai_response = None
+
+                if not ai_response or any(phrase in ai_response.lower() for phrase in refusal_phrases):
+                    malware_explanation = self._fallback_malware_explanation(context, capability_list)
+                else:
+                    malware_explanation = MalwareExplanation(
+                        summary=ai_response[:200] + "..." if len(ai_response) > 200 else ai_response,
+                        technical_details=ai_response,
+                        capabilities_identified=capability_list,
+                        confidence_level=0.8
+                    )
                 
             except Exception as e:
                 print(f"[InvestigationEngine] AI explanation failed: {e}, using fallback")
@@ -536,8 +579,9 @@ class InvestigationEngine:
                         action=f"Block outbound traffic to IP {ip} at perimeter firewalls",
                         rationale="Observed network communication during detonation"
                     ))
+            _NON_DOMAINS = (".html", ".htm", ".php", ".asp", ".jsp", ".txt", ".bin", ".sh", ".py", ".so", ".exe")
             for domain in dynamic.get("dns_queries", []):
-                if domain and "." in domain:
+                if domain and "." in domain and "/" not in domain and not any(domain.lower().endswith(ext) for ext in _NON_DOMAINS):
                     add_rec(Recommendation(
                         priority="high",
                         category="containment",

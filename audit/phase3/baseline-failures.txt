@@ -1,0 +1,73 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.3, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\Neil\ps4-malware-suite\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8
+configfile: pytest.ini
+plugins: anyio-4.14.2, langsmith-0.10.11, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 15 items
+
+backend/tests/test_phase3_regression.py::TestA11DynamicFailureAndDuration::test_a11_unconfigured_sandbox_failure_reason_no_redundant_prefix FAILED
+backend/tests/test_phase3_regression.py::TestA11DynamicFailureAndDuration::test_a11_null_duration_seconds_is_none PASSED
+backend/tests/test_phase3_regression.py::TestA12RecommendationsCorrectness::test_a12_deduplicates_isolation_advice FAILED
+backend/tests/test_phase3_regression.py::TestA12RecommendationsCorrectness::test_a12_does_not_sinkhole_index_html_or_non_domains FAILED
+backend/tests/test_phase3_regression.py::TestA12RecommendationsCorrectness::test_a12_structured_perimeter_firewall_rules_for_c2_ips PASSED
+backend/tests/test_phase3_regression.py::TestA12RecommendationsCorrectness::test_a12_static_persistence_hunt_when_dynamic_absent FAILED
+backend/tests/test_phase3_regression.py::TestA13EvidenceTimelineLayout::test_a13_sample_received_and_static_analysis_timestamps_distinguishable FAILED
+backend/tests/test_phase3_regression.py::TestA13EvidenceTimelineLayout::test_a13_timestamp_cell_is_clean_not_long_sentence FAILED
+backend/tests/test_phase3_regression.py::TestA14StaticStringsTruncation::test_a14_explained_strings_capped FAILED
+backend/tests/test_phase3_regression.py::TestA15MalwareFamilyNormalization::test_a15_normalize_malware_family_names FAILED
+backend/tests/test_phase3_regression.py::TestA15MalwareFamilyNormalization::test_a15_no_false_family_disagreement_when_normalized_names_match PASSED
+backend/tests/test_phase3_regression.py::TestA15MalwareFamilyNormalization::test_a15_flags_family_disagreement_with_normalized_name_when_truly_different PASSED
+backend/tests/test_phase3_regression.py::TestA16GeoIPStatusDistinction::test_a16_lookup_ip_unconfigured_database FAILED
+backend/tests/test_phase3_regression.py::TestA16GeoIPStatusDistinction::test_a16_lookup_ip_private_ip FAILED
+backend/tests/test_phase3_regression.py::TestA16GeoIPStatusDistinction::test_a16_get_status FAILED
+
+=================================== FAILURES ===================================
+_ TestA11DynamicFailureAndDuration.test_a11_unconfigured_sandbox_failure_reason_no_redundant_prefix _
+AssertionError: assert 'Dynamic analysis not performed: SANDBOX_API_URL is not configured' == 'SANDBOX_API_URL is not configured'
+
+_ TestA12RecommendationsCorrectness.test_a12_deduplicates_isolation_advice _
+AssertionError: Expected 1 isolation recommendation, got ['Isolate the affected device from the network', 'Isolate infected endpoint(s) from the internal network immediately to halt command-and-control communication and lateral propagation.']
+
+_ TestA12RecommendationsCorrectness.test_a12_does_not_sinkhole_index_html_or_non_domains _
+AssertionError: index.html must not be sinkholed in recommendations: Sinkhole or blacklist malicious domain queries at internal DNS resolvers: index.html, rc.local, evil-c2.attacker.com.
+
+_ TestA12RecommendationsCorrectness.test_a12_static_persistence_hunt_when_dynamic_absent _
+TypeError: _generate_recommendations() got an unexpected keyword argument 'static_persistence_paths'
+
+_ TestA13EvidenceTimelineLayout.test_a13_sample_received_and_static_analysis_timestamps_distinguishable _
+AssertionError: Ingestion and static completion must have distinguishable timestamps
+assert '2026-10-03T12:00:00Z' != '2026-10-03T12:00:00Z'
+
+_ TestA13EvidenceTimelineLayout.test_a13_timestamp_cell_is_clean_not_long_sentence _
+AssertionError: assert 'seq' in {'event': 'Sample received', 'indicator': 'SHA-256 anchored artifact', 'severity': 'INFO', 'source': 'Ingestion', ...}
+
+_ TestA14StaticStringsTruncation.test_a14_explained_strings_capped _
+ImportError: cannot import name '_format_pdf_static_strings' from 'backend.app.analysis'
+
+_ TestA15MalwareFamilyNormalization.test_a15_normalize_malware_family_names _
+TypeError: 'NoneType' object is not callable
+
+_ TestA16GeoIPStatusDistinction.test_a16_lookup_ip_unconfigured_database _
+AttributeError: module 'backend.app.geoip' has no attribute 'lookup_ip'
+
+_ TestA16GeoIPStatusDistinction.test_a16_lookup_ip_private_ip _
+AttributeError: module 'backend.app.geoip' has no attribute 'lookup_ip'
+
+_ TestA16GeoIPStatusDistinction.test_a16_get_status _
+AttributeError: module 'backend.app.geoip' has no attribute 'get_status'
+
+=========================== short test summary info ===========================
+FAILED backend/tests/test_phase3_regression.py::TestA11DynamicFailureAndDuration::test_a11_unconfigured_sandbox_failure_reason_no_redundant_prefix
+FAILED backend/tests/test_phase3_regression.py::TestA12RecommendationsCorrectness::test_a12_deduplicates_isolation_advice
+FAILED backend/tests/test_phase3_regression.py::TestA12RecommendationsCorrectness::test_a12_does_not_sinkhole_index_html_or_non_domains
+FAILED backend/tests/test_phase3_regression.py::TestA12RecommendationsCorrectness::test_a12_static_persistence_hunt_when_dynamic_absent
+FAILED backend/tests/test_phase3_regression.py::TestA13EvidenceTimelineLayout::test_a13_sample_received_and_static_analysis_timestamps_distinguishable
+FAILED backend/tests/test_phase3_regression.py::TestA13EvidenceTimelineLayout::test_a13_timestamp_cell_is_clean_not_long_sentence
+FAILED backend/tests/test_phase3_regression.py::TestA14StaticStringsTruncation::test_a14_explained_strings_capped
+FAILED backend/tests/test_phase3_regression.py::TestA15MalwareFamilyNormalization::test_a15_normalize_malware_family_names
+FAILED backend/tests/test_phase3_regression.py::TestA16GeoIPStatusDistinction::test_a16_lookup_ip_unconfigured_database
+FAILED backend/tests/test_phase3_regression.py::TestA16GeoIPStatusDistinction::test_a16_lookup_ip_private_ip
+FAILED backend/tests/test_phase3_regression.py::TestA16GeoIPStatusDistinction::test_a16_get_status
+======================== 11 failed, 4 passed in 2.25s =========================

@@ -72,25 +72,38 @@ def _cap_device_admin_persistence(static: StaticAnalysisOutput, dynamic: Optiona
 
 
 def _cap_data_exfiltration(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Data exfiltration capability — only with OBSERVED upload/exfiltration behavior."""
+    if not dynamic:
+        return None
     evidence = []
     score = 0.0
 
-    if static.extracted_strings.urls or static.extracted_strings.ips:
-        evidence.append("hardcoded network endpoint(s) found in static strings")
-        score += 0.3
-    if dynamic and any(conn.get("flagged_c2") for conn in dynamic.network_connections):
-        evidence.append("confirmed live connection to flagged C2 endpoint")
-        score += 0.5
-    if dynamic:
-        for conn in dynamic.network_connections:
-            interval = conn.get("interval_seconds")
-            if interval and interval < 120:
-                evidence.append(f"periodic beaconing every {interval}s — consistent with automated exfiltration")
-                score += 0.2
-                break
+    has_upload = any(
+        conn.get("bytes_sent", 0) > 1024 or conn.get("upload") or conn.get("exfiltration")
+        for conn in dynamic.network_connections
+    )
+    has_beacon_conn = any(conn.get("flagged_c2") for conn in dynamic.network_connections)
+    has_beacon = False
+    for conn in dynamic.network_connections:
+        interval = conn.get("interval_seconds")
+        if interval and interval < 120:
+            has_beacon = True
+            break
 
-    if score >= 0.3:
-        return CapabilityTag(capability="data_exfiltration", confidence=min(score, 1.0), evidence=evidence)
+    if has_upload:
+        evidence.append("confirmed live outbound data upload during detonation")
+        score += 0.6
+    if has_beacon_conn and has_beacon:
+        evidence.append("periodic automated beaconing with active payload transmission")
+        score += 0.5
+
+    if score >= 0.5:
+        return CapabilityTag(
+            capability="data_exfiltration",
+            confidence=min(score, 1.0),
+            evidence=evidence,
+            evidence_state="OBSERVED",
+        )
     return None
 
 
@@ -119,17 +132,41 @@ def _cap_persistence(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
                 capability="persistence_registry",
                 confidence=0.85,
                 evidence=["writes to registry Run key — survives reboot"],
+                evidence_state="OBSERVED",
             )
+    static_paths = [str(s) for s in (static.extracted_strings.suspicious_keywords or [])]
+    hidden_tmp_static = any(
+        (s.startswith("/tmp/.") or s.startswith("/var/run/.") or s.startswith("/usr/lib/.")) and len(s) > 8
+        for s in static_paths
+    )
+    if hidden_tmp_static:
+        return CapabilityTag(
+            capability="persistence",
+            confidence=0.65,
+            evidence=["statically references hidden persistence payload paths in runtime/temporary directories"],
+            evidence_state="STATIC",
+        )
     return None
 
 
 def _cap_cron_persistence(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
     """Linux — persistence via cron."""
-    if dynamic and any("cron" in a.lower() for a in dynamic.persistence_artifacts):
+    dyn_hit = dynamic and any("cron" in a.lower() for a in dynamic.persistence_artifacts)
+    static_paths = [str(s).lower() for s in (static.extracted_strings.suspicious_keywords or [])]
+    static_hit = any("/etc/cron" in s or "/var/spool/cron" in s or "crontab" in s for s in static_paths)
+    if dyn_hit:
         return CapabilityTag(
             capability="persistence_cron",
             confidence=0.85,
             evidence=["installs a cron job — survives reboot on Linux"],
+            evidence_state="OBSERVED",
+        )
+    if static_hit:
+        return CapabilityTag(
+            capability="persistence_cron",
+            confidence=0.65,
+            evidence=["references cron persistence paths in static strings (/etc/cron*)"],
+            evidence_state="STATIC",
         )
     return None
 
@@ -249,38 +286,52 @@ def _cap_anti_debug(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnaly
 
 
 def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
-    """Command & Control beaconing capability."""
-    has_c2_conn = dynamic and any(c.get("flagged_c2") for c in dynamic.network_connections)
-    has_c2_ep = dynamic and len(dynamic.c2_endpoints_detected) > 0
-    static_c2 = "hardcoded_c2_ip" in static.static_risk_flags
+    """Command & Control beaconing capability — only with INTEL-confirmed infrastructure or an OBSERVED beacon pattern."""
+    evidence = []
     has_beacon = False
+    has_c2_conn = False
+
     if dynamic:
+        has_c2_conn = any(c.get("flagged_c2") for c in dynamic.network_connections)
+        has_c2_ep = len(dynamic.c2_endpoints_detected) > 0
         for c in dynamic.network_connections:
             if c.get("interval_seconds") and c["interval_seconds"] < 120:
                 has_beacon = True
                 break
-    if has_c2_conn or has_c2_ep or has_beacon or static_c2:
-        evidence = []
-        if has_c2_conn or has_c2_ep:
-            evidence.append("communicates with flagged command-and-control infrastructure")
         if has_beacon:
             evidence.append("exhibits automated command-and-control periodic beacon pattern")
-        if static_c2 and not evidence:
-            evidence.append("contains hardcoded C2 IP in static indicators")
+        if has_c2_conn or has_c2_ep:
+            evidence.append("communicates with confirmed command-and-control infrastructure")
+
+    # Threat intel confirmed C2 match
+    intel_c2 = any(
+        "c2" in ym.rule_name.lower() or "botnet" in ym.rule_name.lower() or ym.category == "threat_intel"
+        for ym in getattr(static, "yara_matches", [])
+        if "[MalwareBazaar]" in getattr(ym, "rule_name", "")
+    )
+    if intel_c2 and not evidence:
+        evidence.append("threat-intelligence confirmed command-and-control signature match")
+
+    if (has_beacon or has_c2_conn) and evidence:
         return CapabilityTag(
             capability="c2_communication",
-            confidence=0.9 if (has_c2_conn or has_c2_ep) else 0.7,
-            evidence=evidence or ["communicates with flagged command-and-control infrastructure"],
-            evidence_state="OBSERVED" if (has_c2_conn or has_c2_ep or has_beacon) else "STATIC",
+            confidence=0.9 if (has_c2_conn and has_beacon) else 0.8,
+            evidence=evidence,
+            evidence_state="OBSERVED",
+        )
+    elif intel_c2 and evidence:
+        return CapabilityTag(
+            capability="c2_communication",
+            confidence=0.85,
+            evidence=evidence,
+            evidence_state="INTEL",
         )
     return None
 
 
 def _cap_persistence_init(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
     """Linux — persistence via rc.local, init.d, or systemd service."""
-    if not dynamic:
-        return None
-    written = [str(f).lower() for f in (dynamic.files_written + dynamic.persistence_artifacts)]
+    written = [str(f).lower() for f in ((dynamic.files_written + dynamic.persistence_artifacts) if dynamic else [])]
     hit = any("rc.local" in f or "init.d" in f or "systemd" in f for f in written)
     if hit:
         return CapabilityTag(
@@ -288,6 +339,15 @@ def _cap_persistence_init(static: StaticAnalysisOutput, dynamic: Optional[Dynami
             confidence=0.85,
             evidence=["writes startup persistence scripts (rc.local, init.d, or systemd) — survives reboot on Linux"],
             evidence_state="OBSERVED",
+        )
+    static_paths = [str(s).lower() for s in (static.extracted_strings.suspicious_keywords or [])]
+    static_hit = any("/etc/init.d" in s or "rc.local" in s or "/etc/rc" in s or "systemd" in s for s in static_paths)
+    if static_hit:
+        return CapabilityTag(
+            capability="persistence_init",
+            confidence=0.65,
+            evidence=["references startup persistence paths in static strings (/etc/init.d, rc.d, or systemd)"],
+            evidence_state="STATIC",
         )
     return None
 

@@ -105,7 +105,12 @@ def _rule_cron_persistence(static: StaticAnalysisOutput, dynamic: Optional[Dynam
         for kw in static.extracted_strings.suspicious_keywords
     )
     if dynamic_hit or static_hit:
-        return MitreTechnique(technique_id="T1053.003", technique_name="Scheduled Task/Job: Cron", confidence=0.85 if dynamic_hit else 0.65)
+        return MitreTechnique(
+            technique_id="T1053.003",
+            technique_name="Scheduled Task/Job: Cron",
+            confidence=0.85 if dynamic_hit else 0.65,
+            evidence_state="OBSERVED" if dynamic_hit else "STATIC",
+        )
     return None
 
 
@@ -220,15 +225,21 @@ def _rule_resource_hijacking(static: StaticAnalysisOutput, dynamic: Optional[Dyn
 
 def _rule_hidden_files(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
     """T1564.001 — Hide Artifacts: Hidden Files and Directories."""
-    hidden_path = dynamic and any(
+    hidden_path_dyn = dynamic and any(
         any(part.startswith(".") and len(part) > 1 and not part.startswith("..") for part in Path(f).parts)
         for f in (dynamic.files_written + dynamic.persistence_artifacts)
     )
-    if hidden_path:
+    static_paths = [str(s) for s in (static.extracted_strings.suspicious_keywords or [])]
+    hidden_path_static = any(
+        any(part.startswith(".") and len(part) > 1 and not part.startswith("..") for part in Path(s).parts)
+        for s in static_paths if ("/" in s or "\\" in s)
+    )
+    if hidden_path_dyn or hidden_path_static:
         return MitreTechnique(
             technique_id="T1564.001",
             technique_name="Hide Artifacts: Hidden Files and Directories",
-            confidence=0.8,
+            confidence=0.8 if hidden_path_dyn else 0.6,
+            evidence_state="OBSERVED" if hidden_path_dyn else "STATIC",
         )
     return None
 
@@ -269,21 +280,29 @@ def _rule_web_protocols(static: StaticAnalysisOutput, dynamic: Optional[DynamicA
 
 
 def _rule_init_persistence(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
-    """T1037 / T1543.002 — Persistence via rc.local or systemd service write."""
-    if not dynamic:
-        return None
-    written = [str(f).lower() for f in (dynamic.files_written + dynamic.persistence_artifacts)]
-    if any("rc.local" in f for f in written):
+    """T1037 / T1543.002 — Persistence via rc.local, init.d, or systemd service write."""
+    written = [str(f).lower() for f in ((dynamic.files_written + dynamic.persistence_artifacts) if dynamic else [])]
+    static_paths = [str(s).lower() for s in (static.extracted_strings.suspicious_keywords or [])]
+
+    rc_hit = any("rc.local" in f or "rc%d.d" in f or "rc.d" in f for f in written)
+    static_rc_hit = any("rc.local" in s or "/etc/rc" in s for s in static_paths)
+    if rc_hit or static_rc_hit:
         return MitreTechnique(
             technique_id="T1037",
-            technique_name="Boot or Logon Initialization Scripts: rc.local",
-            confidence=0.85,
+            technique_name="Boot or Logon Initialization Scripts: rc.local / rc.d",
+            confidence=0.85 if rc_hit else 0.65,
+            evidence_state="OBSERVED" if rc_hit else "STATIC",
         )
-    if any("systemd" in f for f in written):
+
+    init_hit = any("init.d" in f for f in written) or any("/etc/init.d" in s for s in static_paths)
+    systemd_hit = any("systemd" in f for f in written) or any("/etc/systemd" in s for s in static_paths)
+    if init_hit or systemd_hit:
+        is_dyn = bool(written and any(k in f for f in written for k in ("init.d", "systemd")))
         return MitreTechnique(
             technique_id="T1543.002",
-            technique_name="Create or Modify System Process: systemd Service",
-            confidence=0.85,
+            technique_name="Create or Modify System Process: systemd / init.d Service",
+            confidence=0.85 if is_dyn else 0.65,
+            evidence_state="OBSERVED" if is_dyn else "STATIC",
         )
     return None
 

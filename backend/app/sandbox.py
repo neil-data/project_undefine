@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -25,6 +26,27 @@ from agents.orchestrator.schema import DynamicAnalysisOutput
 from .strace_parser import parse_strace_artifacts
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def compute_file_sha256(file_path: str | Path) -> str:
+    """Compute hex SHA-256 for a local file."""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_manifest_hmac(manifest: dict, secret: Optional[str] = None) -> bool:
+    """Cryptographically verify the HMAC signature on manifest.json."""
+    if not isinstance(manifest, dict) or ("_hmac" not in manifest and "signature" not in manifest):
+        return False
+    sig = manifest.get("_hmac") or manifest.get("signature")
+    core = {k: v for k, v in manifest.items() if k not in ("_hmac", "signature", "manifest.json")}
+    token = secret or sandbox_token()
+    canonical = json.dumps(core, sort_keys=True)
+    expected = hmac.new(token.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig)
 
 _ELF_MACHINES = {
     2: "SPARC",
@@ -124,8 +146,23 @@ async def run_dynamic_analysis(
             execution_mode="real",
             status="unavailable",
             dynamic_status="unavailable",
-            failure_reason="Dynamic analysis not performed: SANDBOX_API_URL is not configured",
+            failure_reason="SANDBOX_API_URL is not configured",
             message="Dynamic analysis not performed: SANDBOX_API_URL is not configured",
+            target_architecture=target_arch,
+        )
+
+    # Compute submitted sample hash for evidence-to-sample binding
+    try:
+        submitted_sha256 = compute_file_sha256(path_str)
+    except Exception as exc:
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="failed",
+            dynamic_status="failed",
+            failure_reason=f"Failed to read sample file: {exc}",
+            message=f"Dynamic analysis failed: {exc}",
             target_architecture=target_arch,
         )
 
@@ -198,29 +235,49 @@ async def run_dynamic_analysis(
                     sandbox_url=url,
                 )
 
-            # Poll job status until completion
-            poll_start = time.time()
-            max_poll = float(timeout_seconds + 10)
+            # Check if submission immediately yielded a terminal status
             final_job = None
+            if job_payload.get("status") in ("completed", "timed_out", "failed", "incomplete"):
+                final_job = job_payload
 
-            while time.time() - poll_start < max_poll:
-                poll_resp = await client.get(f"{url.rstrip('/')}/jobs/{job_id}", headers=headers)
-                if poll_resp.status_code == 200:
-                    data = poll_resp.json()
-                    if data.get("status") in ("completed", "failed"):
-                        final_job = data
-                        break
-                await asyncio.sleep(1.0)
+            # Poll job status until completion if not already terminated
+            if not final_job:
+                poll_start = time.time()
+                max_poll = float(timeout_seconds + 10)
+
+                while time.time() - poll_start < max_poll:
+                    poll_resp = await client.get(f"{url.rstrip('/')}/jobs/{job_id}", headers=headers)
+                    if poll_resp.status_code == 200:
+                        data = poll_resp.json()
+                        if data.get("status") in ("completed", "failed", "timed_out", "incomplete"):
+                            final_job = data
+                            break
+                    await asyncio.sleep(1.0)
 
             if not final_job:
                 return DynamicAnalysisOutput(
                     sample_id=file_name,
                     available=True,
                     execution_mode="real",
-                    status="failed",
-                    dynamic_status="failed",
+                    status="timed_out",
+                    dynamic_status="timed_out",
                     failure_reason="Dynamic analysis timed out waiting for sandbox execution",
                     message="Dynamic analysis timed out",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
+
+            if final_job.get("status") == "timed_out":
+                err = final_job.get("error", "Sandbox execution timed out")
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="timed_out",
+                    dynamic_status="timed_out",
+                    failure_reason=err,
+                    message=f"Dynamic analysis timed out: {err}",
                     target_architecture=target_arch,
                     task_id=job_id,
                     sandbox_url=url,
@@ -236,6 +293,21 @@ async def run_dynamic_analysis(
                     dynamic_status="failed",
                     failure_reason=err,
                     message=f"Dynamic analysis failed: {err}",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
+
+            if final_job.get("status") == "incomplete":
+                err = final_job.get("error", "Sandbox execution incomplete")
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="incomplete",
+                    dynamic_status="incomplete",
+                    failure_reason=err,
+                    message=f"Dynamic analysis incomplete: {err}",
                     target_architecture=target_arch,
                     task_id=job_id,
                     sandbox_url=url,
@@ -258,6 +330,75 @@ async def run_dynamic_analysis(
                 )
 
             manifest = manifest_resp.json()
+
+            # Cryptographically verify manifest HMAC
+            if not verify_manifest_hmac(manifest):
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason="Artifact manifest HMAC verification failed: manifest tampered or untrusted",
+                    message="Dynamic analysis failed: manifest verification failed",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
+
+            # Evidence-to-sample binding verification: fetch and check meta.json
+            meta_resp = await client.get(f"{url.rstrip('/')}/jobs/{job_id}/artifacts/meta.json", headers=headers)
+            if meta_resp.status_code != 200:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason=f"Failed to fetch execution metadata meta.json ({meta_resp.status_code})",
+                    message="Dynamic analysis failed: metadata missing",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
+
+            # Verify meta.json hash against manifest
+            expected_meta_hash = manifest.get("meta.json")
+            if expected_meta_hash:
+                actual_meta_hash = hashlib.sha256(meta_resp.content).hexdigest()
+                if actual_meta_hash != expected_meta_hash:
+                    return DynamicAnalysisOutput(
+                        sample_id=file_name,
+                        available=True,
+                        execution_mode="real",
+                        status="failed",
+                        dynamic_status="failed",
+                        failure_reason="Artifact manifest validation failed: meta.json",
+                        message="Artifact manifest validation failed: meta.json",
+                        target_architecture=target_arch,
+                        task_id=job_id,
+                        sandbox_url=url,
+                    )
+
+            try:
+                meta_data = meta_resp.json()
+            except Exception:
+                meta_data = {}
+
+            sandbox_sample_sha256 = meta_data.get("sample_sha256")
+            if not sandbox_sample_sha256 or sandbox_sample_sha256 != submitted_sha256:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason=f"Evidence-to-sample binding mismatch: submitted SHA-256 ({submitted_sha256}) does not match sandbox execution ({sandbox_sample_sha256})",
+                    message="Dynamic analysis failed: sample binding mismatch",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
 
             # Download raw artifacts and cryptographically verify each against manifest
             downloaded_artifacts: dict[str, bytes] = {}
@@ -282,6 +423,30 @@ async def run_dynamic_analysis(
                                 sandbox_url=url,
                             )
                     downloaded_artifacts[art_name] = content
+                elif art_name == "strace.log":
+                    # Critical artifact failed to download!
+                    try:
+                        await client.delete(f"{url.rstrip('/')}/jobs/{job_id}", headers=headers)
+                    except Exception:
+                        pass
+                    return DynamicAnalysisOutput(
+                        sample_id=file_name,
+                        available=True,
+                        execution_mode="real",
+                        status="incomplete",
+                        dynamic_status="incomplete",
+                        failure_reason=f"Incomplete dynamic analysis: failed to download critical execution trace strace.log ({art_resp.status_code})",
+                        message="Dynamic analysis incomplete: trace missing",
+                        target_architecture=target_arch,
+                        task_id=job_id,
+                        sandbox_url=url,
+                    )
+
+            # Cleanup remote job on sandbox host after retrieving artifacts
+            try:
+                await client.delete(f"{url.rstrip('/')}/jobs/{job_id}", headers=headers)
+            except Exception as clean_err:
+                _LOGGER.debug(f"Failed to cleanup job {job_id} on sandbox host: {clean_err}")
 
             # Parse artifacts with backend/app/strace_parser.py
             strace_text = downloaded_artifacts.get("strace.log", b"").decode("utf-8", errors="replace")

@@ -87,6 +87,18 @@ def is_available() -> bool:
     return _city_reader is not None
 
 
+def get_status() -> dict:
+    """Return status of GeoIP databases."""
+    _ensure_loaded()
+    return {
+        "available": _city_reader is not None,
+        "city_db_configured": _city_reader is not None,
+        "asn_db_configured": _asn_reader is not None,
+        "city_db_path": os.environ.get("GEOIP_DB_PATH"),
+        "asn_db_path": os.environ.get("GEOIP_ASN_DB_PATH"),
+    }
+
+
 def _region_name(subdivisions) -> Optional[str]:
     """Best-effort region/state name from the city DB's subdivision list."""
     if subdivisions:
@@ -234,12 +246,89 @@ def _lookup_http_fallback(ip: str) -> Optional[dict]:
                         "isp": data.get("isp"),
                         "is_hosting": data.get("hosting") or _is_hosting_org(org),
                         "is_proxy": data.get("proxy"),
-                        "threat_level": "HIGH" if data.get("proxy") or data.get("hosting") else "MEDIUM",
+                        "threat_level": "LOW",
                         "disclaimer": GEOIP_DISCLAIMER,
                     }
     except Exception as e:
         _LOGGER.debug("HTTP GeoIP fallback skipped for %s: %s", ip, e)
     return None
+
+
+def lookup_ip(ip: str) -> Optional[dict]:
+    """
+    Resolve one IP to detailed geolocation + ASN attribution with explicit status:
+    - 'private': internal / private network IP
+    - 'database_not_configured': local MaxMind database is not loaded
+    - 'no_record': database is loaded but IP has no geolocation entry
+    - 'resolved': successfully resolved
+    """
+    if _is_private_ip(ip):
+        res = lookup(ip)
+        if res:
+            res["status"] = "private"
+        return res
+
+    _ensure_loaded()
+    if _city_reader is None:
+        if os.environ.get("GEOIP_HTTP_FALLBACK", "0").lower() in ("1", "true"):
+            fallback = _lookup_http_fallback(ip)
+            if fallback is not None:
+                fallback["status"] = "resolved"
+                fallback["database_configured"] = False
+                return fallback
+        return {
+            "ip": ip,
+            "status": "database_not_configured",
+            "database_configured": False,
+            "message": "GeoIP database not configured (set GEOIP_DB_PATH to GeoLite2-City.mmdb)",
+            "country": None,
+            "country_iso": None,
+            "city": None,
+            "region": None,
+            "postal_code": None,
+            "timezone": None,
+            "latitude": None,
+            "longitude": None,
+            "accuracy_radius": None,
+            "asn": None,
+            "asn_org": None,
+            "isp": None,
+            "is_hosting": None,
+            "is_proxy": None,
+            "threat_level": "LOW",
+            "disclaimer": GEOIP_DISCLAIMER,
+        }
+
+    rec = _lookup_city(ip)
+    if rec is None:
+        return {
+            "ip": ip,
+            "status": "no_record",
+            "database_configured": True,
+            "message": "No geolocation record found for IP in local database",
+            "country": None,
+            "country_iso": None,
+            "city": None,
+            "region": None,
+            "postal_code": None,
+            "timezone": None,
+            "latitude": None,
+            "longitude": None,
+            "accuracy_radius": None,
+            "asn": None,
+            "asn_org": None,
+            "isp": None,
+            "is_hosting": None,
+            "is_proxy": None,
+            "threat_level": "LOW",
+            "disclaimer": GEOIP_DISCLAIMER,
+        }
+
+    rec = _enrich_asn(rec)
+    rec["status"] = "resolved"
+    rec["database_configured"] = True
+    rec["disclaimer"] = GEOIP_DISCLAIMER
+    return rec
 
 
 def lookup(ip: str) -> Optional[dict]:
@@ -263,6 +352,7 @@ def lookup(ip: str) -> Optional[dict]:
             "is_proxy": False,
             "threat_level": "LOW",
             "disclaimer": GEOIP_DISCLAIMER,
+            "status": "private",
         }
 
     _ensure_loaded()
@@ -270,17 +360,22 @@ def lookup(ip: str) -> Optional[dict]:
     if record is not None:
         record = _enrich_asn(record)
         record["disclaimer"] = GEOIP_DISCLAIMER
+        record["status"] = "resolved"
+        record["database_configured"] = True
         return record
 
-    fallback = _lookup_http_fallback(ip)
-    if fallback is not None:
-        return fallback
+    if os.environ.get("GEOIP_HTTP_FALLBACK", "0").lower() in ("1", "true"):
+        fallback = _lookup_http_fallback(ip)
+        if fallback is not None:
+            fallback["status"] = "resolved"
+            fallback["database_configured"] = False
+            return fallback
 
     return None
 
 
 def lookup_many(ips: list[str]) -> list[dict]:
-    """Resolve a list of IPs, silently skipping any that can't be resolved."""
+    """Resolve a list of IPs, returning detailed attribution for each."""
     if not ips:
         return []
     results = []
@@ -289,7 +384,7 @@ def lookup_many(ips: list[str]) -> list[dict]:
         if ip in seen:
             continue
         seen.add(ip)
-        result = lookup(ip)
+        result = lookup_ip(ip)
         if result is not None:
             results.append(result)
     return results
