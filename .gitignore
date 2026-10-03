@@ -8,6 +8,8 @@ venv/
 node_modules/
 frontend/build/
 frontend/dist/
+apps/frontend/build/
+apps/frontend/dist/
 
 # Docker
 *.log
@@ -18,8 +20,10 @@ Thumbs.db
 
 # Sandbox / samples — NEVER commit real malware samples
 dynamic-sandbox/samples/
+sandbox/samples/
 *.exe
 *.apk
+!analysis/rules/yara/**/*.apk
 !static-analysis/yara_rules/**/*.apk
 
 # Secrets
@@ -29,6 +33,8 @@ dynamic-sandbox/samples/
 .pytest_cache/
 
 dynamic-sandbox/mobsf/test_files/
+sandbox/adapters/mobsf/test_files/
 
 sandbox-host/artifacts/
+sandbox/host/artifacts/
 scratch/

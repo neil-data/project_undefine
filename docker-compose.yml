@@ -42,7 +42,7 @@ services:
     image: e-rakshak-backend:v3.0
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: apps/backend/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -76,8 +76,8 @@ services:
   # Dynamic Sandbox Host (Decoupled execution & artifact collection microservice)
   sandbox-host:
     build:
-      context: .
-      dockerfile: sandbox-host/Dockerfile
+      context: sandbox/host
+      dockerfile: Dockerfile
     ports:
       - "8004:8000"
     environment:
@@ -95,7 +95,7 @@ services:
   ingestion:
     build:
       context: .
-      dockerfile: ingestion/Dockerfile
+      dockerfile: apps/ingestion/Dockerfile
     ports:
       - "8002:8001"
     environment:
@@ -112,7 +112,7 @@ services:
     image: e-rakshak-frontend:v3.0
     build:
       context: .
-      dockerfile: frontend/Dockerfile
+      dockerfile: apps/frontend/Dockerfile
     ports:
       - "3000:3000"
     environment:
