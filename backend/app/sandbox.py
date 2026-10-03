@@ -1,40 +1,41 @@
 """
-backend/app/sandbox.py — Dynamic-analysis / detonation sandbox integration.
+backend/app/sandbox.py — Decoupled real dynamic-analysis sandbox client.
 
-This module provides the bridge to real or simulated detonation:
-1. When CAPE_API_URL or SANDBOX_API_URL is configured, the sample is submitted
-   to the isolated remote sandbox and runs in execution_mode="real".
-2. In simulated mode (offline/local fallback), execution_mode="simulated" is
-   strictly declared.
-   - ZERO hardcoded fixture IPs or domains are ever emitted in production.
-   - Endpoints and domains derive strictly from this sample's static extraction
-     or threat-intelligence lookups. If none exist, zero network events are emitted.
-   - Clean/benign samples report "no behavior observed (simulated)", never "clean".
-   - Target architecture is inspected directly from binary headers (ARM, x86_64, etc.).
+Connects to the standalone E-Rakshak Dynamic Sandbox Host (SANDBOX_API_URL).
+When SANDBOX_API_URL is unconfigured, returns dynamic_status="unavailable".
+Strictly real dynamic sandbox execution. ZERO fabricated events.
+Cryptographically validates artifact manifest hashes before parsing via strace_parser.
 """
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import logging
 import os
 import struct
+import time
 from pathlib import Path
 from typing import Optional
 
+import httpx
+
 from agents.orchestrator.schema import DynamicAnalysisOutput
+from .strace_parser import parse_strace_artifacts
 
 _LOGGER = logging.getLogger(__name__)
 
-# Single source of truth for Linux simulated persistence paths
-PERSISTENCE_CRON_PATH = "/etc/cron.d/root_cron"
-PERSISTENCE_PAYLOAD_PATH = "/dev/shm/.payload"
-
 _ELF_MACHINES = {
+    2: "SPARC",
     3: "x86",
+    4: "m68k",
     8: "MIPS",
-    20: "PowerPC",
-    21: "PowerPC64",
+    20: "PPC",
+    21: "PPC64",
     40: "ARM",
+    42: "SH",
+    43: "SPARCV9",
     50: "IA-64",
     62: "x86_64",
     183: "AArch64",
@@ -50,8 +51,13 @@ _PE_MACHINES = {
 
 
 def sandbox_url() -> Optional[str]:
-    """The configured remote sandbox endpoint, or None when offline."""
+    """The configured remote sandbox endpoint, or None when unconfigured."""
     return os.environ.get("SANDBOX_API_URL") or os.environ.get("CAPE_API_URL") or None
+
+
+def sandbox_token() -> str:
+    """Bearer authentication token for sandbox host."""
+    return os.environ.get("SANDBOX_API_TOKEN", "erakshak-sandbox-secret-token")
 
 
 def is_configured() -> bool:
@@ -70,8 +76,9 @@ def inspect_binary_architecture(sample_path: str | Path) -> str:
             endian = "<" if header[5] == 1 else ">"
             machine_id = struct.unpack_from(endian + "H", header, 18)[0]
             bits = "64-bit" if header[4] == 2 else "32-bit"
-            name = _ELF_MACHINES.get(machine_id, f"Machine({machine_id})")
-            return f"{name} ({bits})"
+            endian_label = "little-endian" if header[5] == 1 else "big-endian"
+            name = _ELF_MACHINES.get(machine_id, f"e_machine=0x{machine_id:04x} (unmapped)")
+            return f"{name} ({bits}, {endian_label})"
         if header.startswith(b"MZ") and len(header) >= 64:
             e_lfanew = struct.unpack_from("<I", header, 0x3C)[0]
             with open(path, "rb") as f:
@@ -94,252 +101,221 @@ async def run_dynamic_analysis(
     static_data: Optional[dict] = None,
     malware_bazaar: Optional[dict] = None,
     target_architecture: Optional[str] = None,
+    timeout_seconds: int = 90,
 ) -> DynamicAnalysisOutput:
     """
-    Return dynamic-analysis state for a sample.
+    Execute dynamic detonation in the isolated sandbox host.
 
-    When remote sandbox is active: submits and returns execution_mode="real".
-    When in local fallback: executes simulated detonation with execution_mode="simulated".
+    Zero simulation fallback:
+    - If SANDBOX_API_URL is unconfigured -> dynamic_status='unavailable'
+    - If sandbox fails or times out -> dynamic_status='failed'
+    - Validates manifest.json SHA-256 for all artifacts before parsing.
     """
     path_str = str(sample_path)
-    file_name = os.path.basename(path_str)
-    ext = Path(path_str).suffix.lower()
-    if not file_type:
-        file_type = ext.lstrip(".").lower() if ext else "unknown"
-    else:
-        file_type = str(file_type).lower()
-
+    file_name = os.path.basename(path_str) or "sample.bin"
     target_arch = target_architecture or inspect_binary_architecture(sample_path)
     url = sandbox_url()
 
-    # ── REMOTE SANDBOX PATH (REAL DETONATION) ─────────────────────────────────
-    if url:
-        try:
-            import httpx
+    # 1. Unconfigured sandbox host
+    if not url:
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="unavailable",
+            dynamic_status="unavailable",
+            failure_reason="Dynamic analysis not performed: SANDBOX_API_URL is not configured",
+            message="Dynamic analysis not performed: SANDBOX_API_URL is not configured",
+            target_architecture=target_arch,
+        )
 
-            path = str(sample_path)
-            remote_file_type = file_type if file_type and file_type != "unknown" else "unknown"
-            if remote_file_type == "unknown" and Path(sample_path).is_file():
-                suffix = Path(sample_path).suffix.lower().lstrip(".")
-                if suffix:
-                    remote_file_type = suffix
+    # 2. Remote sandbox execution
+    headers = {"Authorization": f"Bearer {sandbox_token()}"}
+    client_timeout = max(timeout_seconds + 30, 120)
 
-            async with httpx.AsyncClient(timeout=30) as client:
-                with open(path, "rb") as handle:
-                    files = {"file": (file_name, handle)}
-                    data = {"options": json_body(remote_file_type)}
-                    if remote_file_type == "dll" or file_name.lower().endswith(".dll"):
-                        data["package"] = "dll"
-                    try:
-                        response = await client.post(f"{url.rstrip('/')}/api/tasks/create/", data=data, files=files)
-                        response.raise_for_status()
-                        payload = response.json()
-                    except Exception as sub_err:
-                        _LOGGER.exception("Sandbox submission to %s failed", url)
-                        return DynamicAnalysisOutput(
-                            sample_id=file_name,
-                            available=True,
-                            execution_mode="real",
-                            status="failed",
-                            dynamic_status="failed",
-                            failure_reason=f"Sandbox did not accept sample: {sub_err}",
-                            message="Dynamic analysis submission failed — sandbox did not accept the sample.",
-                            target_architecture=target_arch,
-                        )
+    try:
+        async with httpx.AsyncClient(timeout=float(client_timeout)) as client:
+            # Submit sample
+            with open(path_str, "rb") as handle:
+                files = {"file": (file_name, handle)}
+                data = {
+                    "target_architecture": target_arch,
+                    "timeout_seconds": str(timeout_seconds),
+                }
+                submit_resp = await client.post(f"{url.rstrip('/')}/jobs", files=files, data=data, headers=headers)
 
-            task_id = payload.get("task_id") or payload.get("id")
-            return DynamicAnalysisOutput(
-                sample_id=file_name,
-                available=True,
-                execution_mode="real",
-                status="submitted",
-                dynamic_status="completed",
-                task_id=str(task_id) if task_id else None,
-                sandbox_url=url,
+            if submit_resp.status_code == 409:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason="Sandbox runner is busy with another job",
+                    message="Dynamic analysis failed: Sandbox runner busy",
+                    target_architecture=target_arch,
+                    sandbox_url=url,
+                )
+
+            if submit_resp.status_code == 503:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason="Sandbox safety lock active: external egress check failed",
+                    message="Dynamic analysis failed: Sandbox safety lock active",
+                    target_architecture=target_arch,
+                    sandbox_url=url,
+                )
+
+            if submit_resp.status_code != 201 and submit_resp.status_code != 200:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason=f"Sandbox rejected job ({submit_resp.status_code}): {submit_resp.text}",
+                    message="Dynamic analysis submission failed",
+                    target_architecture=target_arch,
+                    sandbox_url=url,
+                )
+
+            job_payload = submit_resp.json()
+            job_id = job_payload.get("job_id")
+            if not job_id:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason="Sandbox response missing job_id",
+                    message="Dynamic analysis failed: invalid sandbox response",
+                    target_architecture=target_arch,
+                    sandbox_url=url,
+                )
+
+            # Poll job status until completion
+            poll_start = time.time()
+            max_poll = float(timeout_seconds + 10)
+            final_job = None
+
+            while time.time() - poll_start < max_poll:
+                poll_resp = await client.get(f"{url.rstrip('/')}/jobs/{job_id}", headers=headers)
+                if poll_resp.status_code == 200:
+                    data = poll_resp.json()
+                    if data.get("status") in ("completed", "failed"):
+                        final_job = data
+                        break
+                await asyncio.sleep(1.0)
+
+            if not final_job:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason="Dynamic analysis timed out waiting for sandbox execution",
+                    message="Dynamic analysis timed out",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
+
+            if final_job.get("status") == "failed":
+                err = final_job.get("error", "Sandbox execution failed")
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason=err,
+                    message=f"Dynamic analysis failed: {err}",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
+
+            # Fetch artifact manifest
+            manifest_resp = await client.get(f"{url.rstrip('/')}/jobs/{job_id}/artifacts/manifest.json", headers=headers)
+            if manifest_resp.status_code != 200:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=True,
+                    execution_mode="real",
+                    status="failed",
+                    dynamic_status="failed",
+                    failure_reason=f"Failed to fetch artifact manifest ({manifest_resp.status_code})",
+                    message="Dynamic analysis failed: manifest missing",
+                    target_architecture=target_arch,
+                    task_id=job_id,
+                    sandbox_url=url,
+                )
+
+            manifest = manifest_resp.json()
+
+            # Download raw artifacts and cryptographically verify each against manifest
+            downloaded_artifacts: dict[str, bytes] = {}
+            for art_name in ("strace.log", "capture.pcap", "fs_diff.json"):
+                art_resp = await client.get(f"{url.rstrip('/')}/jobs/{job_id}/artifacts/{art_name}", headers=headers)
+                if art_resp.status_code == 200:
+                    content = art_resp.content
+                    expected_hash = manifest.get(art_name)
+                    if expected_hash:
+                        actual_hash = hashlib.sha256(content).hexdigest()
+                        if actual_hash != expected_hash:
+                            return DynamicAnalysisOutput(
+                                sample_id=file_name,
+                                available=True,
+                                execution_mode="real",
+                                status="failed",
+                                dynamic_status="failed",
+                                failure_reason=f"Artifact manifest validation failed: {art_name}",
+                                message=f"Artifact manifest validation failed: {art_name}",
+                                target_architecture=target_arch,
+                                task_id=job_id,
+                                sandbox_url=url,
+                            )
+                    downloaded_artifacts[art_name] = content
+
+            # Parse artifacts with backend/app/strace_parser.py
+            strace_text = downloaded_artifacts.get("strace.log", b"").decode("utf-8", errors="replace")
+            pcap_bytes = downloaded_artifacts.get("capture.pcap")
+            fs_diff_data = None
+            if "fs_diff.json" in downloaded_artifacts:
+                try:
+                    fs_diff_data = json.loads(downloaded_artifacts["fs_diff.json"].decode("utf-8", errors="replace"))
+                except Exception:
+                    pass
+
+            output = parse_strace_artifacts(
+                strace_log=strace_text,
+                pcap_data=pcap_bytes,
+                fs_diff=fs_diff_data,
                 target_architecture=target_arch,
-                message="Dynamic analysis submitted to sandbox. Results will appear when detonation completes.",
-            )
-        except ImportError:
-            return DynamicAnalysisOutput(
                 sample_id=file_name,
-                available=True,
-                execution_mode="real",
-                status="failed",
-                dynamic_status="unavailable",
-                failure_reason="httpx client not installed",
-                target_architecture=target_arch,
-                message="Dynamic analysis unavailable — httpx client not installed.",
+                task_id=job_id,
+                duration_seconds=int(final_job.get("duration_seconds") or 30),
             )
-        except Exception as exc:
-            _LOGGER.exception("Sandbox integration error")
-            return DynamicAnalysisOutput(
-                sample_id=file_name,
-                available=True,
-                execution_mode="real",
-                status="failed",
-                dynamic_status="failed",
-                failure_reason=str(exc),
-                target_architecture=target_arch,
-                message="Dynamic analysis unavailable — sandbox integration error.",
-            )
+            output.sandbox_url = url
+            output.artifact_hashes = manifest
+            return output
 
-    # ── SIMULATED SANDBOX PATH (ZERO FIXTURE MANDATE) ────────────────────────
-    static = static_data or {}
-    extracted = static.get("extracted_strings") or {}
-    yara_matches = static.get("yara_matches") or []
-    mb = malware_bazaar or {}
-
-    # Extract observables strictly from this sample
-    extracted_ips: list[str] = [str(ip) for ip in extracted.get("ips", []) if ip]
-    extracted_urls: list[str] = [str(u) for u in extracted.get("urls", []) if u]
-    suspicious_keywords: list[str] = [str(k).lower() for k in extracted.get("suspicious_keywords", []) if k]
-
-    has_threat = bool(
-        yara_matches
-        or extracted_ips
-        or extracted_urls
-        or suspicious_keywords
-        or mb.get("found")
-    )
-
-    # 1. Benign or clean-looking sample (e.g. hello world, harmless binary)
-    if not has_threat:
+    except Exception as exc:
+        _LOGGER.exception("Sandbox client execution error")
         return DynamicAnalysisOutput(
             sample_id=file_name,
             available=True,
-            execution_mode="simulated",
-            status="completed",
-            dynamic_status="no_behavior_observed",
-            failure_reason=None,
-            message=f"No behavior observed (simulated). Target architecture: {target_arch}. Static inspection identified no malicious triggers.",
-            task_id=f"sim-clean-{file_name[:16]}",
-            sandbox_url=f"simulated://isolated-{platform or 'native'}-sandbox",
-            duration_seconds=30,
+            execution_mode="real",
+            status="failed",
+            dynamic_status="failed",
+            failure_reason=str(exc),
+            message=f"Dynamic analysis failed: {exc}",
             target_architecture=target_arch,
-            network_connections=[],
-            c2_endpoints_detected=[],
-            process_tree=[
-                {"pid": 1001, "process_name": file_name, "cmdline": f"./{file_name}", "exit_code": 0}
-            ],
-            api_calls=[],
-            dns_queries=[],
-            files_written=[],
-            registry_changes=[],
-            persistence_artifacts=[],
+            sandbox_url=url,
         )
-
-    # 2. Suspicious/malicious sample — derive signals strictly from sample observables
-    network_connections: list[dict] = []
-    c2_endpoints: list[str] = []
-    dns_queries: list[str] = []
-
-    # Map extracted IPs
-    for ip in extracted_ips[:5]:
-        network_connections.append({
-            "dest_ip": ip,
-            "dest_port": 80,
-            "protocol": "TCP",
-            "flagged_c2": False,  # Decoupled reputation: not flagged C2 by default
-            "simulated": True,
-        })
-
-    # Map extracted URLs to hostnames/queries
-    for u in extracted_urls[:5]:
-        try:
-            from urllib.parse import urlsplit
-            host = urlsplit(u).hostname
-            if host and "." in host and not host.endswith((".exe", ".bin", ".dat")):
-                if host not in dns_queries:
-                    dns_queries.append(host)
-        except Exception:
-            pass
-
-    base_pid = 3100 + (abs(hash(file_name)) % 5000)
-    process_tree: list[dict] = [
-        {"pid": base_pid, "process_name": file_name, "cmdline": f"./{file_name}"}
-    ]
-    api_calls: list[str] = []
-    files_written: list[str] = []
-    registry_changes: list[str] = []
-    persistence_artifacts: list[str] = []
-
-    # Linux / ELF heuristics from sample evidence
-    if platform == "linux" or ext in (".elf", ".bin", ".so") or file_type == "elf":
-        has_cron = any("cron" in kw for kw in suspicious_keywords) or any("cron" in str(y).lower() for y in yara_matches)
-        has_shell = any(k in suspicious_keywords for k in ("/bin/sh", "/bin/bash", "system", "execve"))
-        has_ptrace = any("ptrace" in kw for kw in suspicious_keywords)
-        has_socket = any(k in suspicious_keywords for k in ("socket", "connect")) or bool(network_connections)
-
-        if has_ptrace:
-            api_calls.append("sys_ptrace")
-        if has_socket:
-            api_calls.extend(["sys_socket", "sys_connect"])
-        if has_shell:
-            api_calls.extend(["sys_fork", "sys_execve"])
-            process_tree.append({
-                "pid": base_pid + 1,
-                "process_name": "sh",
-                "cmdline": f"/bin/sh -c '{file_name}'",
-            })
-        if has_cron:
-            cmdline = f"crontab -l; echo '* * * * * {PERSISTENCE_PAYLOAD_PATH}' | crontab -"
-            process_tree.append({
-                "pid": base_pid + 2,
-                "process_name": "crontab",
-                "cmdline": cmdline,
-            })
-            persistence_artifacts.append(f"Cron persistence installed: {PERSISTENCE_CRON_PATH}")
-
-    # Windows / PE heuristics from sample evidence
-    elif platform == "windows" or ext in (".exe", ".dll") or file_type in ("pe", "exe", "dll"):
-        has_reg = any("run" in kw or "registry" in kw for kw in suspicious_keywords)
-        has_ps = any("powershell" in kw or "cmd.exe" in kw for kw in suspicious_keywords)
-        if has_ps:
-            process_tree.append({
-                "pid": 4120,
-                "process_name": "cmd.exe",
-                "cmdline": f"cmd.exe /c start {file_name}",
-            })
-        if has_reg:
-            reg_key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\ClientAutoStart"
-            registry_changes.append(reg_key)
-            persistence_artifacts.append(f"Registry Run Key added: {reg_key}")
-            api_calls.append("RegSetValueExW")
-
-    # Android / APK heuristics from manifest
-    elif platform == "android" or ext == ".apk" or file_type == "apk":
-        perms = (static.get("android_manifest") or {}).get("permissions") or []
-        if any("BOOT_COMPLETED" in p for p in perms):
-            persistence_artifacts.append("RECEIVE_BOOT_COMPLETED receiver declared in AndroidManifest")
-        if any("SMS" in p for p in perms):
-            api_calls.append("android.telephony.SmsManager.sendTextMessage")
-        if any("LOCATION" in p for p in perms):
-            api_calls.append("android.location.LocationManager.getLastKnownLocation")
-
-    return DynamicAnalysisOutput(
-        sample_id=file_name,
-        available=True,
-        execution_mode="simulated",
-        status="completed",
-        dynamic_status="completed",
-        failure_reason=None,
-        message=f"Detonation simulated from static observables (Target Architecture: {target_arch}).",
-        task_id=f"sim-{platform or 'native'}-{file_name[:16]}",
-        sandbox_url=f"simulated://isolated-{platform or 'native'}-sandbox",
-        duration_seconds=45,
-        target_architecture=target_arch,
-        network_connections=network_connections,
-        c2_endpoints_detected=c2_endpoints,
-        process_tree=process_tree,
-        api_calls=api_calls,
-        dns_queries=dns_queries,
-        files_written=files_written,
-        registry_changes=registry_changes,
-        persistence_artifacts=persistence_artifacts,
-    )
-
-
-
-def json_body(file_type: Optional[str]) -> str:
-    import json
-    return json.dumps({"file_type": file_type})

@@ -35,8 +35,10 @@ def test_zero_fixture_ips_in_production_code():
 
 
 @pytest.mark.asyncio
-async def test_simulation_mode_never_reports_clean(tmp_path):
-    """An un-detonated benign sample must report 'no behavior observed (simulated)', never 'clean'."""
+async def test_dynamic_unconfigured_reports_unavailable(tmp_path, monkeypatch):
+    """When SANDBOX_API_URL is not configured, dynamic analysis returns dynamic_status='unavailable'."""
+    monkeypatch.delenv("SANDBOX_API_URL", raising=False)
+    monkeypatch.delenv("CAPE_API_URL", raising=False)
     dummy_elf = tmp_path / "hello_benign"
     dummy_elf.write_bytes(b"\x7fELF\x01\x01\x01\x00" + b"\x00" * 50)
     
@@ -46,16 +48,19 @@ async def test_simulation_mode_never_reports_clean(tmp_path):
         file_type="elf",
         static_data={"extracted_strings": {}, "yara_matches": []}
     )
-    assert result.execution_mode == "simulated"
-    assert "no behavior observed (simulated)" in result.message.lower()
+    assert result.execution_mode == "real"
+    assert result.dynamic_status == "unavailable"
+    assert "not configured" in result.message.lower()
     assert result.network_connections == []
     assert result.c2_endpoints_detected == []
     assert result.files_written == []
 
 
 @pytest.mark.asyncio
-async def test_dynamic_independence(tmp_path):
-    """Different binaries must produce distinct simulated runtime behavior based strictly on their evidence."""
+async def test_dynamic_zero_simulation_mandate(tmp_path, monkeypatch):
+    """Binaries never produce simulated/invented events when sandbox is unconfigured."""
+    monkeypatch.delenv("SANDBOX_API_URL", raising=False)
+    monkeypatch.delenv("CAPE_API_URL", raising=False)
     sample_a = tmp_path / "sample_a"
     sample_a.write_bytes(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 50)
 
@@ -74,28 +79,13 @@ async def test_dynamic_independence(tmp_path):
         file_type="elf",
         static_data=static_a,
     )
-    assert res_a.execution_mode == "simulated"
-    assert len(res_a.network_connections) == 1
-    assert res_a.network_connections[0]["dest_ip"] == "45.33.2.1"
-    assert any("cron" in p for p in res_a.persistence_artifacts)
+    assert res_a.execution_mode == "real"
+    assert res_a.dynamic_status == "unavailable"
+    # Never invent network connections or persistence if dynamic analysis was not performed
+    assert res_a.network_connections == []
+    assert res_a.c2_endpoints_detected == []
+    assert res_a.persistence_artifacts == []
 
-    # Sample B with zero network indicators
-    sample_b = tmp_path / "sample_b"
-    sample_b.write_bytes(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 50)
-    static_b = {
-        "extracted_strings": {"ips": [], "urls": [], "suspicious_keywords": []},
-        "yara_matches": [],
-    }
-
-    res_b = await sandbox.run_dynamic_analysis(
-        sample_b,
-        platform="linux",
-        file_type="elf",
-        static_data=static_b,
-    )
-    assert res_b.execution_mode == "simulated"
-    assert res_b.network_connections == []
-    assert res_b.c2_endpoints_detected == []
 
 
 def test_ioc_sanitizer_extensions_and_ips():

@@ -135,28 +135,49 @@ def _is_valid_ipv4(val: str, allow_private: bool = False) -> bool:
         return False
 
 
+_REJECTED_TLDS = {
+    "local", "target", "service", "socket", "mount", "timer", "path", "scope", "slice",
+}
+
+
 def _is_valid_domain(val: str) -> bool:
     if not val or len(val) < 4 or len(val) > 253:
         return False
+    if any(c in val for c in ('/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '\t', '\r', '\n')):
+        return False
+    if "." not in val:
+        return False
+
+    raw_parts = val.strip(".").split(".")
+    raw_tld = raw_parts[-1]
+    if any(c.isupper() for c in raw_tld) and any(c.islower() for c in raw_tld):
+        return False
+    if raw_tld.isupper() and len(raw_tld) <= 4:
+        return False
+
     clean = val.lower().strip(".")
-    if any(c in clean for c in ('/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '\t', '\r', '\n')):
-        return False
-    if "." not in clean:
-        return False
     parts = clean.split(".")
     tld = parts[-1]
+    if tld in _REJECTED_TLDS or f".{tld}" in _INVALID_DOMAIN_EXTENSIONS:
+        return False
     if not re.match(r"^[a-z]{2,24}$", tld):
         return False
-    if f".{tld}" in _INVALID_DOMAIN_EXTENSIONS:
+
+    second_level = parts[-2]
+    if len(second_level) < 3:
         return False
+
     for part in parts:
         if not part or len(part) > 63:
             return False
         if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", part):
             return False
-    if clean in ("localhost", "example.com", "test.com", "a.out", "ldr", "classes.dexpk", "classes.dex"):
+
+    if clean in ("localhost", "example.com", "test.com", "a.out", "ldr", "classes.dexpk", "classes.dex", "rc.local"):
         return False
     if "dex" in clean and clean.endswith("pk"):
+        return False
+    if clean.endswith(".so") or (clean.startswith("lib") and ".so" in clean):
         return False
     return True
 
@@ -301,9 +322,6 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
         elif isinstance(dynamic_output, dict):
             dyn_dict = dynamic_output
 
-    execution_mode = (dyn_dict or {}).get("execution_mode")
-    is_simulated = execution_mode == "simulated"
-
     static_ips = set((raw_static.get("extracted_strings") or {}).get("ips") or [])
     dynamic_connections = {str(c.get("dest_ip") or c.get("ip")): c for c in (dyn_dict or {}).get("network_connections", []) if c.get("dest_ip") or c.get("ip")}
     dynamic_domains = {str(q) for q in (dyn_dict or {}).get("dns_queries", [])}
@@ -328,23 +346,11 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
         flagged = bool(connection and connection.get("flagged_c2"))
         is_tor, tor_label = geoip.check_tor_status(ip)
 
-        if is_simulated:
-            source = "Heuristic Simulation" if (connection and ip not in static_ips) else ("Static Analysis" if not connection else "Static + Heuristic Simulation")
-            evidence_state = "SIMULATED" if connection else "OBSERVED"
-            conf = "LOW"
-            if flagged:
-                related = f"Simulated C2 endpoint (heuristic){f'; {tor_label}' if is_tor else ''}"
-            elif connection:
-                related = f"Simulated network connection{f'; {tor_label}' if is_tor else ''}"
-            else:
-                related = f"Embedded static endpoint{f' ({tor_label} - via static extraction, not observed runtime traffic)' if is_tor else ''}"
-            classification = "SUSPICIOUS" if flagged or is_tor else ("UNKNOWN" if not connection else "SUSPICIOUS")
-        else:
-            source = "Static + Dynamic" if ip in static_ips and connection else "Dynamic Network" if connection else "Static Analysis"
-            evidence_state = "CORROBORATED" if connection and ip in static_ips else "OBSERVED"
-            conf = "HIGH" if flagged or (connection and ip in static_ips) else "MEDIUM" if connection else "LOW"
-            related = ("Flagged C2 connection" if flagged else "Network connection observed" if connection else "Embedded endpoint") + (f" ({tor_label})" if is_tor else "")
-            classification = "MALICIOUS" if flagged else "SUSPICIOUS" if connection or is_tor else "UNKNOWN"
+        source = "Static + Dynamic" if ip in static_ips and connection else "Dynamic Network" if connection else "Static Analysis"
+        evidence_state = "CORROBORATED" if (connection and ip in static_ips) else "OBSERVED"
+        conf = "HIGH" if flagged or (connection and ip in static_ips) else "MEDIUM" if connection else "LOW"
+        related = ("Flagged C2 connection" if flagged else "Network connection observed" if connection else "Embedded endpoint") + (f" ({tor_label})" if is_tor else "")
+        classification = "MALICIOUS" if flagged else "SUSPICIOUS" if connection or is_tor else "UNKNOWN"
 
         records.append({
             "indicator": ip,
@@ -360,18 +366,11 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
 
     for domain in indicators.get("domains", []):
         dynamic = domain in dynamic_domains
-        if is_simulated:
-            source = "Heuristic Simulation" if dynamic else "Static Analysis"
-            evidence_state = "SIMULATED" if dynamic else "OBSERVED"
-            conf = "LOW" if not _is_benign_domain(domain) else "HIGH"
-            classification = "BENIGN" if _is_benign_domain(domain) else "SUSPICIOUS"
-            related = "Simulated DNS query (heuristic)" if dynamic else "Embedded domain"
-        else:
-            source = "Static + Dynamic" if dynamic else "Static Analysis"
-            evidence_state = "CORROBORATED" if dynamic else "OBSERVED"
-            conf = "HIGH" if _is_benign_domain(domain) or dynamic else "LOW"
-            classification = "BENIGN" if _is_benign_domain(domain) else "SUSPICIOUS" if dynamic else "UNKNOWN"
-            related = "DNS query observed" if dynamic else "Embedded domain"
+        source = "Static + Dynamic" if dynamic else "Static Analysis"
+        evidence_state = "OBSERVED" if dynamic else "STATIC"
+        conf = "HIGH" if _is_benign_domain(domain) or dynamic else "LOW"
+        classification = "BENIGN" if _is_benign_domain(domain) else "SUSPICIOUS" if dynamic else "UNKNOWN"
+        related = "DNS query observed" if dynamic else "Embedded domain"
 
         records.append({
             "indicator": domain,
@@ -405,12 +404,12 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
                 records.append({
                     "indicator": str(fw),
                     "type": "DROPPED_FILE",
-                    "source": "Heuristic Simulation" if is_simulated else "Dynamic Sandbox",
+                    "source": "Dynamic Sandbox",
                     "classification": "SUSPICIOUS",
-                    "confidence": "LOW" if is_simulated else "MEDIUM",
+                    "confidence": "MEDIUM",
                     "first_seen": raw_static.get("submitted_at"),
                     "occurrence_count": 1,
-                    "evidence_state": "SIMULATED" if is_simulated else "OBSERVED",
+                    "evidence_state": "OBSERVED",
                     "related_behavior": "File written / dropped by sample",
                 })
 
@@ -426,7 +425,6 @@ def _build_evidence_correlations(raw_static: dict, dynamic_output: Optional[dict
         elif isinstance(dynamic_output, dict):
             dyn_dict = dynamic_output
 
-    is_simulated = (dyn_dict or {}).get("execution_mode") == "simulated"
     static_ips = set((raw_static.get("extracted_strings") or {}).get("ips") or [])
     cards: list[dict] = []
 
@@ -437,26 +435,15 @@ def _build_evidence_correlations(raw_static: dict, dynamic_output: Optional[dict
         corroborated = ip in static_ips
         flagged = bool(connection.get("flagged_c2"))
 
-        if is_simulated:
-            cards.append({
-                "finding": f"Network endpoint {ip}:{connection.get('dest_port') or connection.get('port') or 'unknown'} (simulated)",
-                "static_evidence": f"Embedded endpoint {ip}" if corroborated else "No matching static endpoint observed",
-                "dynamic_evidence": f"{connection.get('protocol') or 'Network'} connection (heuristic simulation)",
-                "correlation": "STATIC + SIMULATED MATCH" if corroborated else "SIMULATED HEURISTIC OBSERVATION",
-                "confidence": "LOW",
-                "evidence_state": "SIMULATED",
-                "severity": "MEDIUM",
-            })
-        else:
-            cards.append({
-                "finding": f"Network endpoint {ip}:{connection.get('dest_port') or connection.get('port') or 'unknown'}",
-                "static_evidence": f"Embedded endpoint {ip}" if corroborated else "No matching static endpoint observed",
-                "dynamic_evidence": f"{connection.get('protocol') or 'Network'} connection observed",
-                "correlation": "STATIC + DYNAMIC MATCH" if corroborated else "DYNAMIC-ONLY OBSERVATION",
-                "confidence": "HIGH" if flagged or corroborated else "MEDIUM",
-                "evidence_state": "CORROBORATED" if corroborated else "OBSERVED",
-                "severity": "HIGH" if flagged else "MEDIUM",
-            })
+        cards.append({
+            "finding": f"Network endpoint {ip}:{connection.get('dest_port') or connection.get('port') or 'unknown'}",
+            "static_evidence": f"Embedded endpoint {ip}" if corroborated else "No matching static endpoint observed",
+            "dynamic_evidence": f"{connection.get('protocol') or 'Network'} connection observed",
+            "correlation": "STATIC + DYNAMIC MATCH" if corroborated else "DYNAMIC-ONLY OBSERVATION",
+            "confidence": "HIGH" if flagged or corroborated else "MEDIUM",
+            "evidence_state": "CORROBORATED" if corroborated else "OBSERVED",
+            "severity": "HIGH" if flagged else "MEDIUM",
+        })
 
     for match in raw_static.get("yara_matches", []):
         cards.append({
@@ -472,14 +459,14 @@ def _build_evidence_correlations(raw_static: dict, dynamic_output: Optional[dict
     for technique in mitre_techniques:
         tid = technique.get("technique_id") if isinstance(technique, dict) else getattr(technique, "technique_id", "")
         name = technique.get("technique_name") if isinstance(technique, dict) else getattr(technique, "technique_name", "")
-        ev_state = "CORROBORATED" if (dyn_dict and not is_simulated) else ("PREDICTED" if is_simulated else "INFERRED")
-        dyn_ev = "Dynamic evidence unavailable" if not dyn_dict else ("Simulated behavioral prediction" if is_simulated else "See correlated runtime findings")
+        ev_state = "OBSERVED" if dyn_dict else "STATIC"
+        dyn_ev = "See correlated runtime findings" if dyn_dict else "Dynamic evidence unavailable"
         cards.append({
             "finding": f"MITRE {tid}: {name}",
             "static_evidence": "Mapped from analysis evidence",
             "dynamic_evidence": dyn_ev,
             "correlation": "EVIDENCE-BASED MITRE MAPPING",
-            "confidence": "LOW" if is_simulated else "MEDIUM",
+            "confidence": "MEDIUM",
             "evidence_state": ev_state,
             "severity": "MEDIUM",
         })
@@ -495,39 +482,60 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
         elif isinstance(dynamic_output, dict):
             dyn_dict = dynamic_output
 
-    is_simulated = (dyn_dict or {}).get("execution_mode") == "simulated"
-    source_label = "Dynamic Heuristic Simulation" if is_simulated else "Dynamic Sandbox"
-
+    source_label = "Dynamic Sandbox"
     timeline = [
         {"timestamp": submitted_at, "event": "Sample received", "source": "Ingestion", "indicator": "SHA-256 anchored artifact", "severity": "INFO"},
         {"timestamp": submitted_at, "event": "Static analysis completed", "source": "Static Analysis", "indicator": "YARA / metadata / IOC extraction", "severity": "INFO"},
     ]
+
+    has_real_timestamps = any(bool(c.get("timestamp")) for c in (dyn_dict or {}).get("network_connections", []))
+    seen_timestamps: set[str] = {submitted_at}
+
+    event_idx = 1
     for conn in (dyn_dict or {}).get("network_connections", []):
-        ts = conn.get("timestamp") or submitted_at
+        raw_ts = conn.get("timestamp")
+        if raw_ts and raw_ts not in seen_timestamps:
+            ts = raw_ts
+            seen_timestamps.add(ts)
+        else:
+            ts = f"Approximate relative execution sequence (event timestamps unrecorded) [Seq #{event_idx}]"
+        event_idx += 1
+
         timeline.append({
             "timestamp": ts,
-            "event": "Network connection (simulated)" if is_simulated else "Network connection",
+            "event": "Network connection",
             "source": source_label,
             "indicator": f"{conn.get('dest_ip') or conn.get('ip') or 'unknown'}:{conn.get('dest_port') or conn.get('port') or '?'}",
             "severity": "HIGH" if conn.get("flagged_c2") else "MEDIUM",
         })
+
     for query in (dyn_dict or {}).get("dns_queries", []):
+        ts = f"Approximate relative execution sequence (event timestamps unrecorded) [Seq #{event_idx}]"
+        event_idx += 1
         timeline.append({
-            "timestamp": submitted_at,
-            "event": "DNS query (simulated)" if is_simulated else "DNS query",
+            "timestamp": ts,
+            "event": "DNS query",
             "source": source_label,
             "indicator": str(query),
             "severity": "MEDIUM",
         })
+
     if correlations:
+        ts = f"Approximate relative execution sequence (event timestamps unrecorded) [Seq #{event_idx}]"
         timeline.append({
-            "timestamp": submitted_at,
+            "timestamp": ts,
             "event": "Evidence correlation completed",
             "source": "Correlation Engine",
             "indicator": f"{len(correlations)} evidence link(s)",
             "severity": "INFO",
         })
     return timeline
+
+
+GENERIC_YARA_RULES = {
+    "md5_constants", "sha1_constants", "ripemd160_constants",
+    "enterpriseapps2", "detectencryptedvariants"
+}
 
 
 def _build_risk_explanation(
@@ -537,37 +545,68 @@ def _build_risk_explanation(
     risk_score: int,
     malware_bazaar: Optional[dict] = None,
 ) -> dict:
-    yara_matches = static_output.get("yara_matches", []) if isinstance(static_output, dict) else static_output.yara_matches
+    yara_matches = static_output.get("yara_matches", []) if isinstance(static_output, dict) else getattr(static_output, "yara_matches", [])
+    
+    # Calculate YARA points distinguishing generic vs family
+    yara_points = 0
+    seen_fams: set[str] = set()
+    for ym in yara_matches:
+        rname = ym.get("rule_name", "") if isinstance(ym, dict) else getattr(ym, "rule_name", "")
+        rcat = ym.get("category", "") if isinstance(ym, dict) else getattr(ym, "category", "")
+        name_low = rname.lower()
+        if name_low in GENERIC_YARA_RULES or name_low.endswith("_constants") or "_constants" in name_low or rcat.lower() in ("crypto", "mass_hunt", "generic"):
+            continue  # Generic rules contribute 0
+        fam_key = rname.split("_")[0].lower() if "_" in rname else rname.lower()
+        if fam_key not in seen_fams:
+            seen_fams.add(fam_key)
+            yara_points += 15
+        else:
+            yara_points += 5
+    yara_points = min(yara_points, 40)
+
+    mitre_points = len(mitre_techniques) * 8
+    cap_points = sum(int((c.get('confidence', 0) if isinstance(c, dict) else getattr(c, 'confidence', 0)) * 15) for c in capability_tags)
+
     parts = [
-        {"rule": "yara", "label": "YARA detections", "points": len(yara_matches) * 15, "kind": "rule"},
-        {"rule": "mitre", "label": "MITRE techniques", "points": len(mitre_techniques) * 8, "kind": "rule"},
-        {"rule": "capabilities", "label": "Capability evidence", "points": sum(int((c.get('confidence', 0) if isinstance(c, dict) else getattr(c, 'confidence', 0)) * 15) for c in capability_tags), "kind": "rule"},
+        {"rule": "yara", "label": "YARA detections", "points": yara_points, "kind": "rule"},
+        {"rule": "mitre", "label": "MITRE techniques", "points": mitre_points, "kind": "rule"},
+        {"rule": "capabilities", "label": "Capability evidence", "points": cap_points, "kind": "rule"},
     ]
     rule_explained = sum(item["points"] for item in parts)
 
     intel_floor_applied = False
     intel_sig = (malware_bazaar or {}).get("signature") if malware_bazaar else None
 
-    if intel_sig and risk_score > rule_explained:
+    if risk_score > rule_explained:
         diff = risk_score - rule_explained
+        if intel_sig or risk_score >= 85:
+            parts.append({
+                "rule": "intel_floor",
+                "label": f"Threat intelligence floor (MalwareBazaar intelligence floor - {intel_sig or 'confirmed malware'}): high-confidence known malware signature (raised to {risk_score})",
+                "points": diff,
+                "kind": "intel_floor",
+            })
+            intel_floor_applied = True
+        else:
+            parts.append({
+                "rule": "deterministic_heuristics",
+                "label": "Other deterministic behavior rules",
+                "points": diff,
+                "kind": "rule",
+            })
+    elif risk_score < rule_explained:
+        # Explicit score cap adjustment line so sum(points) == risk_score EXACTLY
+        diff = risk_score - rule_explained  # Negative value
         parts.append({
-            "rule": "intel_floor",
-            "label": f"Threat intelligence floor (MalwareBazaar intelligence floor - {intel_sig}): high-confidence known malware signature (raised to {risk_score})",
+            "rule": "cap_adjustment",
+            "label": "Score capping adjustment (score capped at maximum limit)",
             "points": diff,
-            "kind": "intel_floor",
-        })
-        intel_floor_applied = True
-    elif risk_score > rule_explained:
-        parts.append({
-            "rule": "deterministic_heuristics",
-            "label": "Other deterministic behavior rules",
-            "points": risk_score - rule_explained,
-            "kind": "rule",
+            "kind": "cap",
         })
 
     result = {
         "score": risk_score,
-        "contributions": [item for item in parts if item["points"]],
+        "contributions": [item for item in parts if item["points"] != 0],
         "method": "Deterministic weighted risk scoring",
     }
     if intel_floor_applied:
@@ -743,7 +782,9 @@ def _generate_recommendations(
         elif plat_lower in ("windows", "pe", "exe"):
             add_rec("Revoke all active session tokens, Kerberos tickets, and stored credentials accessed from this endpoint.")
         else:
-            add_rec("Revoke active SSH keys, local session credentials, and user tokens accessed from this endpoint.")
+            has_credential_ev = any("credential" in c or "keylog" in c or "password" in c for c in cap_names) or "T1056.001" in mitre_ids
+            if has_credential_ev:
+                add_rec("Revoke active SSH keys, local session credentials, and user tokens accessed from this endpoint.")
     elif risk_score >= 30 or verdict == "SUSPICIOUS":
         add_rec("Quarantine the suspicious binary artifact and initiate continuous monitoring on host and perimeter network interfaces.")
 
@@ -781,8 +822,7 @@ def _generate_recommendations(
             add_rec("No critical malicious indicators detected. Retain file hash in baseline repository for automated change tracking.")
             add_rec("Continue routine endpoint monitoring and ensure standard defense-in-depth policies remain active.")
         else:
-            add_rec("Preserve memory dump and network capture PCAP for secondary forensic examination.")
-            add_rec("Scan adjoining networked hosts for matching file hashes or network indicators.")
+            add_rec("No network or file indicators were produced. Block the SHA-256 and review the host manually.")
 
     return recs
 
@@ -1091,7 +1131,7 @@ async def analyze_and_save(
             if dynamic_part:
                 dyn_obj = DynamicAnalysisOutput(
                     sample_id=sample_id,
-                    execution_mode=dynamic_part.get("execution_mode", "simulated"),
+                    execution_mode=dynamic_part.get("execution_mode", "real"),
                     dynamic_status=dynamic_part.get("dynamic_status") or dynamic_part.get("status", "completed"),
                     failure_reason=dynamic_part.get("failure_reason"),
                     status=dynamic_part.get("status", "completed"),
@@ -1172,7 +1212,7 @@ async def analyze_and_save(
             if dynamic_part:
                 dynamic_analysis_result: Optional[dict] = {
                     "available": True,
-                    "execution_mode": dynamic_part.get("execution_mode", "simulated"),
+                    "execution_mode": dynamic_part.get("execution_mode", "real"),
                     "dynamic_status": dynamic_part.get("dynamic_status") or dynamic_part.get("status", "completed"),
                     "failure_reason": dynamic_part.get("failure_reason"),
                     "status": dynamic_part.get("status") or "completed",
@@ -1431,7 +1471,7 @@ async def analyze_and_save(
     dynamic_dict = dynamic_out.model_dump()
     dynamic_analysis_result = {
         "available": True,
-        "execution_mode": dynamic_dict.get("execution_mode", "simulated"),
+        "execution_mode": dynamic_dict.get("execution_mode", "real"),
         "dynamic_status": dynamic_dict.get("dynamic_status") or dynamic_dict.get("status", "completed"),
         "failure_reason": dynamic_dict.get("failure_reason"),
         "status": dynamic_dict.get("status", "completed"),

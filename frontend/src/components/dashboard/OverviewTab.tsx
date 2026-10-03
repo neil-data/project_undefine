@@ -115,7 +115,7 @@ export function OverviewTab({ activeCase, onNavigate }: OverviewTabProps) {
               <div className="text-[8px] font-mono text-[#A0A0A0]">
                 {(() => {
                   const level = activeCase.threatAssessment?.threat_level ?? (activeCase.riskScore >= 70 ? "CRITICAL" : activeCase.riskScore >= 40 ? "HIGH" : "MEDIUM");
-                  const colorMap: Record<string, string> = { SEVERE: "#ff0000", CRITICAL: "#ff4040", HIGH: "#f4b400", MEDIUM: "#f4b400", LOW: "#16ff4d" };
+                  const colorMap: Record<string, string> = { CRITICAL: "#ff4040", HIGH: "#f4b400", MEDIUM: "#f4b400", LOW: "#16ff4d" };
                   return <span style={{ color: colorMap[level] ?? "#f4b400" }} className="flex items-center font-bold">{level} <ArrowUpRight className="w-3 h-3 ml-0.5" /></span>;
                 })()}
               </div>

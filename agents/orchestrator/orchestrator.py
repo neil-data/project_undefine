@@ -173,23 +173,45 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
     elif mb and mb.get("signature"):
         score = max(score, 85)
 
-    # Compute victim impact deterministically from score, capabilities, and observed evidence
+    # Compute victim impact deterministically: 'critical' only with OBSERVED malicious behavior or intel floor; else max 'high'.
     dynamic = state.get("dynamic_output")
-    is_simulated = getattr(dynamic, "execution_mode", "simulated") == "simulated" if dynamic else True
-    has_c2_observed = False
-    has_compromise_observed = False
-    if dynamic and not is_simulated:
-        has_c2_observed = any(bool(c.get("flagged_c2")) for c in getattr(dynamic, "network_connections", []))
-        has_compromise_observed = any("system compromise" in str(p).lower() or "persistence" in str(p).lower() for p in getattr(dynamic, "persistence_artifacts", []))
+    is_real = getattr(dynamic, "execution_mode", "real") == "real" if dynamic else False
+    has_intel_floor = bool(intel_floor or (mb and mb.get("signature")))
+    has_observed_malicious = False
 
-    if score >= 85 and (has_c2_observed or has_compromise_observed):
-        victim_impact = "critical"
-    elif score >= 70:
-        victim_impact = "high"
-    elif score >= 40:
-        victim_impact = "medium"
+    if dynamic and is_real:
+        has_c2_observed = any(bool(c.get("flagged_c2")) for c in getattr(dynamic, "network_connections", []))
+        has_compromise_observed = any(
+            "system compromise" in str(p).lower() or "persistence" in str(p).lower()
+            for p in getattr(dynamic, "persistence_artifacts", [])
+        )
+        has_download_exec = any(
+            any(t in str(c).lower() for t in ("curl", "wget", "/bin/sh", "exec"))
+            for c in getattr(dynamic, "api_calls", []) + [str(p) for p in getattr(dynamic, "process_tree", [])]
+        )
+        has_files_written = any(
+            str(f).startswith("/etc/") or str(f).startswith("/dev/shm/") or "/." in str(f)
+            for f in getattr(dynamic, "files_written", [])
+        )
+        if has_c2_observed or has_compromise_observed or has_download_exec or has_files_written:
+            has_observed_malicious = True
+
+    if not is_real:
+        if score >= 70:
+            victim_impact = "high"
+        elif score >= 40:
+            victim_impact = "medium"
+        else:
+            victim_impact = "low"
     else:
-        victim_impact = "low"
+        if score >= 85 and (has_observed_malicious or has_intel_floor):
+            victim_impact = "critical"
+        elif score >= 70:
+            victim_impact = "high"
+        elif score >= 40:
+            victim_impact = "medium"
+        else:
+            victim_impact = "low"
 
     print(f"[compute_risk_score] Unified risk score: {score}/100, victim_impact: {victim_impact}")
     return {**state, "risk_score": score, "victim_impact": victim_impact}
@@ -206,7 +228,8 @@ def narrative_agent(state: OrchestratorState) -> OrchestratorState:
         victim_impact=state.get("victim_impact"),
         malware_bazaar=state.get("malware_bazaar"),
     )
-    print(f"[narrative_agent] {summary}")
+    safe_summary = summary.encode("ascii", errors="replace").decode("ascii")
+    print(f"[narrative_agent] {safe_summary}")
     return {**state, "narrative_summary": summary}
 
 

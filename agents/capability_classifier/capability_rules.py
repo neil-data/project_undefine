@@ -253,11 +253,78 @@ def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[Dynami
     has_c2_conn = dynamic and any(c.get("flagged_c2") for c in dynamic.network_connections)
     has_c2_ep = dynamic and len(dynamic.c2_endpoints_detected) > 0
     static_c2 = "hardcoded_c2_ip" in static.static_risk_flags
-    if has_c2_conn or has_c2_ep or static_c2:
+    has_beacon = False
+    if dynamic:
+        for c in dynamic.network_connections:
+            if c.get("interval_seconds") and c["interval_seconds"] < 120:
+                has_beacon = True
+                break
+    if has_c2_conn or has_c2_ep or has_beacon or static_c2:
+        evidence = []
+        if has_c2_conn or has_c2_ep:
+            evidence.append("communicates with flagged command-and-control infrastructure")
+        if has_beacon:
+            evidence.append("exhibits automated command-and-control periodic beacon pattern")
+        if static_c2 and not evidence:
+            evidence.append("contains hardcoded C2 IP in static indicators")
         return CapabilityTag(
             capability="c2_communication",
             confidence=0.9 if (has_c2_conn or has_c2_ep) else 0.7,
-            evidence=["communicates with confirmed or flagged command-and-control infrastructure"],
+            evidence=evidence or ["communicates with flagged command-and-control infrastructure"],
+            evidence_state="OBSERVED" if (has_c2_conn or has_c2_ep or has_beacon) else "STATIC",
+        )
+    return None
+
+
+def _cap_persistence_init(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Linux — persistence via rc.local, init.d, or systemd service."""
+    if not dynamic:
+        return None
+    written = [str(f).lower() for f in (dynamic.files_written + dynamic.persistence_artifacts)]
+    hit = any("rc.local" in f or "init.d" in f or "systemd" in f for f in written)
+    if hit:
+        return CapabilityTag(
+            capability="persistence_init",
+            confidence=0.85,
+            evidence=["writes startup persistence scripts (rc.local, init.d, or systemd) — survives reboot on Linux"],
+            evidence_state="OBSERVED",
+        )
+    return None
+
+
+def _cap_scanning(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Network scanning / port sweeping behavior."""
+    if not dynamic:
+        return None
+    conns = dynamic.network_connections
+    scan_hit = any(c.get("type") == "scanning" or "scan" in str(c).lower() for c in conns if isinstance(c, dict)) or len(conns) >= 10
+    if scan_hit:
+        return CapabilityTag(
+            capability="scanning",
+            confidence=0.80,
+            evidence=["performs rapid network scanning / SYN sweeping across target IP ranges"],
+            evidence_state="OBSERVED",
+        )
+    return None
+
+
+def _cap_network_communication(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+    """Outbound network communication capability."""
+    dyn_conns = dynamic and (len(dynamic.network_connections) > 0 or len(dynamic.dns_queries) > 0)
+    stat_urls = bool(static.extracted_strings.urls or static.extracted_strings.ips)
+    if dyn_conns:
+        return CapabilityTag(
+            capability="network_communication",
+            confidence=0.85,
+            evidence=["observed active network connections or DNS lookups during detonation"],
+            evidence_state="OBSERVED",
+        )
+    if stat_urls:
+        return CapabilityTag(
+            capability="network_communication",
+            confidence=0.65,
+            evidence=["hardcoded network endpoint(s) found in binary strings"],
+            evidence_state="STATIC",
         )
     return None
 
@@ -271,6 +338,7 @@ CAPABILITY_RULES = [
     _cap_keylogging,
     _cap_persistence,
     _cap_cron_persistence,
+    _cap_persistence_init,
     _cap_launchd_persistence,
     _cap_privilege_escalation,
     _cap_reverse_shell,
@@ -278,7 +346,9 @@ CAPABILITY_RULES = [
     _cap_downloader,
     _cap_cryptomining,
     _cap_anti_debug,
+    _cap_scanning,
     _cap_c2_communication,
+    _cap_network_communication,
 ]
 
 
@@ -287,8 +357,10 @@ def classify_capabilities(
     dynamic: Optional[DynamicAnalysisOutput],
 ) -> list[CapabilityTag]:
     results: list[CapabilityTag] = []
+    seen: set[str] = set()
     for rule in CAPABILITY_RULES:
         match = rule(static, dynamic)
-        if match:
+        if match and match.capability not in seen:
+            seen.add(match.capability)
             results.append(match)
     return results

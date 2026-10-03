@@ -29,3 +29,6 @@ dynamic-sandbox/samples/
 .pytest_cache/
 
 dynamic-sandbox/mobsf/test_files/
+
+sandbox-host/artifacts/
+scratch/

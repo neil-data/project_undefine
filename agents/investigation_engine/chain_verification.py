@@ -201,10 +201,19 @@ class ChainVerifier:
         if self.secret_key:
             sample_id = str(metadata.get("sample_id", ""))
             task_id = str(metadata.get("task_id", ""))
+            sandbox_id = str(metadata.get("sandbox_id", ""))
             exec_mode = str(metadata.get("execution_mode", ""))
+            dynamic_status = str(metadata.get("dynamic_status", ""))
             evidence_state = str(metadata.get("evidence_state", ""))
             intel_floor = str(metadata.get("intel_floor", ""))
-            link_data = f"{link_type.value}:{timestamp}:{data_hash}:{previous_hash}:{sample_id}:{task_id}:{exec_mode}:{evidence_state}:{intel_floor}"
+            strace_hash = str(metadata.get("strace_hash", ""))
+            pcap_hash = str(metadata.get("pcap_hash", ""))
+            fs_diff_hash = str(metadata.get("fs_diff_hash", ""))
+            link_data = (
+                f"{link_type.value}:{timestamp}:{data_hash}:{previous_hash}:"
+                f"{sample_id}:{task_id}:{sandbox_id}:{exec_mode}:{dynamic_status}:"
+                f"{evidence_state}:{intel_floor}:{strace_hash}:{pcap_hash}:{fs_diff_hash}"
+            )
             signature = self.compute_hmac(link_data)
         
         return ChainLink(
@@ -236,16 +245,32 @@ class ChainVerifier:
             meta = link.metadata or {}
             sample_id = str(meta.get("sample_id", ""))
             task_id = str(meta.get("task_id", ""))
+            sandbox_id = str(meta.get("sandbox_id", ""))
             exec_mode = str(meta.get("execution_mode", ""))
+            dynamic_status = str(meta.get("dynamic_status", ""))
             evidence_state = str(meta.get("evidence_state", ""))
             intel_floor = str(meta.get("intel_floor", ""))
-            link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{sample_id}:{task_id}:{exec_mode}:{evidence_state}:{intel_floor}"
-            if not self.verify_hmac(link_data, link.signature):
-                legacy_link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{exec_mode}"
-                if not self.verify_hmac(legacy_link_data, link.signature):
-                    older_link_data = f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}"
-                    if not self.verify_hmac(older_link_data, link.signature):
-                        return False
+            strace_hash = str(meta.get("strace_hash", ""))
+            pcap_hash = str(meta.get("pcap_hash", ""))
+            fs_diff_hash = str(meta.get("fs_diff_hash", ""))
+            
+            primary_data = (
+                f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:"
+                f"{sample_id}:{task_id}:{sandbox_id}:{exec_mode}:{dynamic_status}:"
+                f"{evidence_state}:{intel_floor}:{strace_hash}:{pcap_hash}:{fs_diff_hash}"
+            )
+            if self.verify_hmac(primary_data, link.signature):
+                return True
+            
+            # Backward compatible checks
+            fallback_patterns = [
+                f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{sample_id}:{task_id}:{exec_mode}:{evidence_state}:{intel_floor}",
+                f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}:{exec_mode}",
+                f"{link.link_type.value}:{link.timestamp}:{link.data_hash}:{link.previous_hash}",
+            ]
+            if any(self.verify_hmac(p, link.signature) for p in fallback_patterns):
+                return True
+            return False
         
         return True
     
@@ -363,9 +388,14 @@ class ChainVerifier:
                             "has_data": True,
                             "sample_id": investigation_state.get("sample_id", ""),
                             "task_id": investigation_state.get("task_id", ""),
+                            "sandbox_id": investigation_state.get("sandbox_id", ""),
                             "execution_mode": investigation_state.get("execution_mode", ""),
+                            "dynamic_status": investigation_state.get("dynamic_status", ""),
                             "evidence_state": investigation_state.get("evidence_state", ""),
                             "intel_floor": investigation_state.get("intel_floor", 0),
+                            "strace_hash": investigation_state.get("strace_hash", "") or (investigation_state.get("artifact_hashes") or {}).get("strace.log", ""),
+                            "pcap_hash": investigation_state.get("pcap_hash", "") or (investigation_state.get("artifact_hashes") or {}).get("capture.pcap", ""),
+                            "fs_diff_hash": investigation_state.get("fs_diff_hash", "") or (investigation_state.get("artifact_hashes") or {}).get("fs_diff.json", ""),
                         }
                     )
                     chain.append(link)

@@ -349,5 +349,53 @@ def test_verifier_without_secret_key():
     assert verifier.verify_chain_link(link, "0" * 64) is True
 
 
+def test_hmac_binds_artifact_manifest_and_sandbox_fields():
+    """Verify that HMAC signature strictly binds artifact hashes and sandbox fields."""
+    verifier = ChainVerifier(secret_key="top_secret_hmac_key")
+    meta = {
+        "sample_id": "test_sample_123",
+        "task_id": "task_uuid_abc",
+        "sandbox_id": "sandbox_node_1",
+        "execution_mode": "real",
+        "dynamic_status": "completed",
+        "evidence_state": "OBSERVED",
+        "intel_floor": 0,
+        "strace_hash": "11" * 32,
+        "pcap_hash": "22" * 32,
+        "fs_diff_hash": "33" * 32,
+    }
+    link = verifier.create_chain_link(
+        link_type=ChainLinkType.DYNAMIC_ANALYSIS,
+        data={"behavior": "execve"},
+        previous_hash="0" * 64,
+        metadata=meta,
+    )
+    assert link.signature is not None
+    assert verifier.verify_chain_link(link, "0" * 64) is True
+
+    # Tampering with any artifact hash breaks signature verification
+    tampered_link = ChainLink(
+        link_type=link.link_type,
+        timestamp=link.timestamp,
+        data_hash=link.data_hash,
+        previous_hash=link.previous_hash,
+        signature=link.signature,
+        metadata={**meta, "strace_hash": "ff" * 32},
+    )
+    assert verifier.verify_chain_link(tampered_link, "0" * 64) is False
+
+    # Tampering with dynamic_status breaks signature verification
+    tampered_status = ChainLink(
+        link_type=link.link_type,
+        timestamp=link.timestamp,
+        data_hash=link.data_hash,
+        previous_hash=link.previous_hash,
+        signature=link.signature,
+        metadata={**meta, "dynamic_status": "failed"},
+    )
+    assert verifier.verify_chain_link(tampered_status, "0" * 64) is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

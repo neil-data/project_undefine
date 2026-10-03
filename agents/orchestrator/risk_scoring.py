@@ -30,6 +30,30 @@ ML_LIKELY_MALICIOUS_BONUS = 20
 DYNAMIC_C2_CONFIRMED_BONUS = 20
 DYNAMIC_DEVICE_ADMIN_BONUS = 10
 
+# Configurable ELF / Linux scoring constants
+SCORE_OBSERVED_DOWNLOAD_AND_EXEC = 20
+SCORE_OBSERVED_PERSISTENCE = 15
+SCORE_OBSERVED_MINING = 15
+SCORE_OBSERVED_SCANNING = 10
+SCORE_OBSERVED_HIDDEN_FILE = 10
+SCORE_OBSERVED_PTRACE = 5
+
+SCORE_OBSERVED_CAP = 50
+SCORE_STATIC_CAP = 20
+
+YARA_FAMILY_WEIGHT = 15
+YARA_GENERIC_WEIGHT = 0
+YARA_CAP = 40
+
+INTEL_FLOOR_SCORE = 85
+MAX_SCORE = 100
+MIN_SCORE = 0
+
+GENERIC_YARA_RULES = {
+    "md5_constants", "sha1_constants", "ripemd160_constants",
+    "enterpriseapps2", "detectencryptedvariants"
+}
+
 # Windows behavior chain weights (Phase 3)
 BEHAVIOR_CHAIN_CRITICAL_WEIGHT = 30
 BEHAVIOR_CHAIN_HIGH_WEIGHT = 20
@@ -56,8 +80,16 @@ ANDROID_OVERLAY_ATTACK_BONUS = 30
 CRITICAL_CHAIN_THRESHOLD = 3
 HIGH_CHAIN_THRESHOLD = 5
 
-MAX_SCORE = 100
-MIN_SCORE = 0
+
+def _is_generic_yara_rule(rule_name: str, category: str = "") -> bool:
+    name_low = rule_name.lower()
+    if name_low in GENERIC_YARA_RULES:
+        return True
+    if name_low.endswith("_constants") or "_constants" in name_low:
+        return True
+    if category.lower() in ("crypto", "mass_hunt", "generic"):
+        return True
+    return False
 
 
 def compute_risk_score(
@@ -66,9 +98,85 @@ def compute_risk_score(
     mitre: list[MitreTechnique],
     capabilities: list[CapabilityTag],
 ) -> int:
-    score = 0
+    is_elf = (
+        getattr(static, "platform", None) == "linux"
+        or getattr(static, "file_type", None) == "elf"
+    )
 
-    score += len(static.yara_matches) * YARA_MATCH_WEIGHT
+    # 1. YARA scoring with family vs generic distinction
+    yara_score = 0
+    seen_families: set[str] = set()
+    for ym in getattr(static, "yara_matches", []):
+        r_name = getattr(ym, "rule_name", "")
+        cat = getattr(ym, "category", "")
+        if _is_generic_yara_rule(r_name, cat):
+            yara_score += YARA_GENERIC_WEIGHT
+        else:
+            # Count at most once per family if family in rule name
+            fam_key = r_name.split("_")[0].lower() if "_" in r_name else r_name.lower()
+            if fam_key not in seen_families:
+                seen_families.add(fam_key)
+                yara_score += YARA_FAMILY_WEIGHT
+            else:
+                yara_score += 5  # additional rule in same family contributes slightly
+    yara_score = min(yara_score, YARA_CAP)
+
+    if is_elf:
+        # Static cap
+        static_contrib = yara_score
+        if getattr(static, "static_risk_flags", []):
+            static_contrib += 10
+        static_contrib = min(static_contrib, SCORE_STATIC_CAP)
+
+        # Observed dynamic behaviors
+        dyn_contrib = 0
+        if dynamic:
+            dyn_status = getattr(dynamic, "dynamic_status", "completed")
+            procs_str = str(getattr(dynamic, "process_tree", [])).lower()
+            apis_str = str(getattr(dynamic, "api_calls", [])).lower()
+            files_str = str(getattr(dynamic, "files_written", [])).lower()
+            pers_str = str(getattr(dynamic, "persistence_artifacts", [])).lower()
+            conns = getattr(dynamic, "network_connections", [])
+
+            # download-and-exec
+            has_download = any(tool in procs_str or tool in apis_str for tool in ("curl", "wget", "ftpget", "tftp"))
+            has_exec = any(tool in procs_str or tool in apis_str for tool in ("/bin/sh", "/bin/bash", "execve"))
+            if has_download and has_exec:
+                dyn_contrib += SCORE_OBSERVED_DOWNLOAD_AND_EXEC
+            elif has_download or has_exec:
+                dyn_contrib += 10
+
+            # persistence write
+            if pers_str or any(p in files_str for p in ("cron", "rc.local", "systemd", "init.d")):
+                dyn_contrib += SCORE_OBSERVED_PERSISTENCE
+
+            # mining
+            if any("stratum" in c or c.get("dest_port") in (3333, 8888, 9999, 14444) for c in conns if isinstance(c, dict)):
+                dyn_contrib += SCORE_OBSERVED_MINING
+
+            # scanning
+            if any(c.get("type") == "scanning" or "scan" in str(c) for c in conns if isinstance(c, dict)) or len(conns) >= 10:
+                dyn_contrib += SCORE_OBSERVED_SCANNING
+
+            # hidden file
+            if any("/." in str(f) or "/dev/shm" in str(f) for f in getattr(dynamic, "files_written", [])):
+                dyn_contrib += SCORE_OBSERVED_HIDDEN_FILE
+
+            # ptrace
+            if "ptrace" in apis_str:
+                dyn_contrib += SCORE_OBSERVED_PTRACE
+
+            dyn_contrib = min(dyn_contrib, SCORE_OBSERVED_CAP)
+
+        # MITRE & Capabilities
+        mitre_contrib = len(mitre) * MITRE_TECHNIQUE_WEIGHT
+        cap_contrib = sum(int(c.confidence * CAPABILITY_CONFIDENCE_MULTIPLIER) for c in capabilities)
+
+        total_score = static_contrib + dyn_contrib + mitre_contrib + cap_contrib
+        return max(MIN_SCORE, min(total_score, MAX_SCORE))
+
+    # Standard non-ELF scoring logic
+    score = yara_score
     score += len(mitre) * MITRE_TECHNIQUE_WEIGHT
     score += sum(int(c.confidence * CAPABILITY_CONFIDENCE_MULTIPLIER) for c in capabilities)
 

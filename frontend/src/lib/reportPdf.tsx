@@ -307,32 +307,50 @@ export async function generateForensicPDF(
   let dynamicHtml: string;
   if (dynamic) {
     const d = dynamic as any;
-    const isSim = d.execution_mode === "simulated";
-    if (isSim) {
+    const isUnavailable = d.dynamic_status === "unavailable" || d.available === false;
+    const isFailed = d.dynamic_status === "failed";
+
+    if (isUnavailable || isFailed) {
+      const reason = d.failure_reason || d.message || d.details || (isUnavailable ? "sandbox not configured" : "Detonation failed");
       dynRows.push(
-        `<div style="background:#fffbe6;border:1px solid #ffe58f;color:#d48806;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:9.5px;font-weight:bold;">⚠️ DYNAMIC RESULTS ARE SIMULATED; NOT OBSERVED BEHAVIOR (HEURISTIC SIMULATION).</div>`
+        `<div style="background:#fff1f0;border:1px solid #ffa39e;color:#cf1322;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:9.5px;font-weight:bold;">Dynamic analysis not performed: ${escapeHtml(reason)}</div>`
       );
     }
-    if (d.dynamic_status === "failed") {
-      dynRows.push(
-        `<div style="background:#fff1f0;border:1px solid #ffa39e;color:#cf1322;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:9.5px;font-weight:bold;">❌ Dynamic analysis failed: ${escapeHtml(d.failure_reason || d.details || d.message || "Detonation error")}</div>`
-      );
-    }
-    dynRows.push(`<b>${t.status}:</b> ${escapeHtml(value(d.status, unavailable))}${isSim ? " (SIMULATED)" : ""}`);
-    dynRows.push(`<b>Execution mode:</b> ${isSim ? "Simulated Heuristic" : "Real Detonation"}`);
-    const realAvailable = d.real_sandbox_available ?? (d.execution_mode === "real");
+    dynRows.push(`<b>${t.status}:</b> ${escapeHtml(value(d.dynamic_status || d.status, unavailable))}`);
+    const realAvailable = d.real_sandbox_available ?? (d.execution_mode === "real" && !isUnavailable);
     dynRows.push(`<b>Real sandbox available:</b> ${realAvailable ? t.yes : t.no}`);
-    dynRows.push(`<b>${t.available}:</b> ${escapeHtml(yesNo(d.available))}`);
     if (d.target_architecture) dynRows.push(`<b>Architecture:</b> ${escapeHtml(d.target_architecture)}`);
     const dynMessage = value(d.message ?? d.details, "");
-    if (dynMessage) dynRows.push(`<b>${t.details}:</b> ${escapeHtml(dynMessage)}`);
+    if (dynMessage && !isUnavailable && !isFailed) dynRows.push(`<b>${t.details}:</b> ${escapeHtml(dynMessage)}`);
     if (value(d.task_id, "") !== "") dynRows.push(`<b>Task ID:</b> ${escapeHtml(d.task_id)}`);
     if (d.sandbox_url) dynRows.push(`<b>Sandbox:</b> ${escapeHtml(d.sandbox_url)}`);
-    if (d.duration_seconds !== undefined && !isSim)
+    if (d.duration_seconds !== undefined)
       dynRows.push(`<b>Duration:</b> ${escapeHtml(String(d.duration_seconds))}s`);
+
+    // Limitations list
+    const limitations = d.limitations || [];
+    if (Array.isArray(limitations) && limitations.length > 0) {
+      dynRows.push(
+        `<b>Stated limitations:</b><ul style="margin:4px 0;padding-left:18px;">${limitations
+          .map((lim: string) => `<li style="margin-bottom:3px;font-size:10px;color:#68778c;">${escapeHtml(lim)}</li>`)
+          .join("")}</ul>`
+      );
+    }
+
+    // Artifact hashes
+    const artifactHashes = d.artifact_hashes || d.artifacts;
+    if (artifactHashes && typeof artifactHashes === "object") {
+      const artLines = Object.entries(artifactHashes)
+        .map(([fname, hash]) => `<li style="margin-bottom:2px;font-family:monospace;font-size:9.5px;">${escapeHtml(fname)}: ${escapeHtml(hash)}</li>`)
+        .join("");
+      if (artLines) {
+        dynRows.push(`<b>Artifact hashes:</b><ul style="margin:4px 0;padding-left:18px;">${artLines}</ul>`);
+      }
+    }
+
     detailList("Network connections", d.network_connections, (c: any) =>
       `<li style="margin-bottom:3px;font-size:11px;line-height:1.5;">${escapeHtml(
-        [c.dest_ip || c.ip, c.dest_port || c.port, c.protocol, c.flagged_c2 ? "(C2)" : "", isSim ? "(simulated)" : ""]
+        [c.dest_ip || c.ip, c.dest_port || c.port, c.protocol, c.flagged_c2 ? "(C2)" : ""]
           .filter(Boolean)
           .join(" ")
       )}</li>`
@@ -349,7 +367,7 @@ export async function generateForensicPDF(
     dynamicHtml = `<b>${t.status}:</b> ${unavailable}<br><span class="muted">${
       language === "gu"
         ? "ડાયનેમિક સેન્ડબોક્સ પરિણામ આ કેસ માટે ઉપલબ્ધ નથી."
-        : "No dynamic sandbox result is available for this case."
+        : "Dynamic analysis not performed: sandbox unavailable."
     }</span>`;
   }
 

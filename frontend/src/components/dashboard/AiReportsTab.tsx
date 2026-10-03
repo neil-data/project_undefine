@@ -426,7 +426,6 @@ export function AiReportsTab({ activeCase, examiner }: AiReportsTabProps) {
               {activeCase.threatAssessment && (
                 <div className="flex flex-wrap gap-2 items-center">
                   <span className={`px-2.5 py-1 rounded text-[9px] font-mono font-bold uppercase border ${
-                    activeCase.threatAssessment.threat_level === "SEVERE" ? "bg-red-950/50 border-red-400/30 text-red-300" :
                     activeCase.threatAssessment.threat_level === "CRITICAL" ? "bg-red-950/40 border-red-500/20 text-[#ff4040]" :
                     activeCase.threatAssessment.threat_level === "HIGH" ? "bg-yellow-950/40 border-yellow-500/20 text-[#f4b400]" :
                     activeCase.threatAssessment.threat_level === "MEDIUM" ? "bg-yellow-950/20 border-yellow-500/10 text-yellow-400" :
@@ -449,17 +448,12 @@ export function AiReportsTab({ activeCase, examiner }: AiReportsTabProps) {
                       {activeCase.aiAnalysis.ai_available ? "AI: ACTIVE" : "AI: FALLBACK"}
                     </span>
                   )}
-                  {activeCase.sandboxResult?.execution_mode === "simulated" && (
-                    <span className="px-2 py-1 rounded text-[8px] font-mono border border-[#f4b400]/40 text-[#f4b400] bg-[#f4b400]/10">
-                      SIMULATED DYNAMICS
-                    </span>
-                  )}
                 </div>
               )}
 
-              {activeCase.sandboxResult?.execution_mode === "simulated" && (
-                <div className="p-2.5 rounded bg-[#f4b400]/5 border border-[#f4b400]/25 text-[11px] font-mono text-[#f4b400]">
-                  <span className="font-bold">⚠️ SIMULATION NOTICE:</span> Dynamic findings in this report are simulated; not observed behavior. Analysis was derived from static heuristics and threat intelligence.
+              {(activeCase.sandboxResult?.dynamic_status === "failed" || activeCase.sandboxResult?.dynamic_status === "unavailable") && (
+                <div className="p-2.5 rounded bg-red-950/20 border border-red-500/30 text-[11px] font-mono text-red-400">
+                  <span className="font-bold">NOTICE:</span> Dynamic analysis not performed: {activeCase.sandboxResult?.failure_reason || activeCase.sandboxResult?.message || "Unavailable"}
                 </div>
               )}
 

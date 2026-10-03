@@ -50,10 +50,8 @@ class TestThreatLevelFromScore:
     def test_critical(self):
         assert self._lvl(70) == "CRITICAL"
         assert self._lvl(89) == "CRITICAL"
-
-    def test_severe(self):
-        assert self._lvl(90) == "SEVERE"
-        assert self._lvl(100) == "SEVERE"
+        assert self._lvl(90) == "CRITICAL"
+        assert self._lvl(100) == "CRITICAL"
 
 
 class TestVerdictFromScore:

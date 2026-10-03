@@ -349,29 +349,55 @@ class IOCExtractor:
         ".log", ".conf", ".cfg", ".xml", ".json", ".yaml", ".yml", ".md",
         ".class", ".jar", ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
     )
+    _REJECTED_TLDS = {
+        "local", "target", "service", "socket", "mount", "timer", "path", "scope", "slice",
+    }
 
     def _is_valid_domain(self, domain: str) -> bool:
-        """Validate domain name against structure and binary noise extensions."""
+        """Validate domain name against structure, systemd unit names, and binary noise extensions."""
         if not domain or len(domain) < 4 or len(domain) > 253:
             return False
+        # Reject if string is already a path or contains path separators
+        if any(c in domain for c in ('/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '\t', '\r', '\n')):
+            return False
+        if "." not in domain:
+            return False
+
+        raw_parts = domain.strip(".").split(".")
+        raw_tld = raw_parts[-1]
+
+        # Reject mixed-case TLDs (e.g. .Hn, .Hx) or all-uppercase noise (e.g. .DL)
+        if any(c.isupper() for c in raw_tld) and any(c.islower() for c in raw_tld):
+            return False
+        if raw_tld.isupper() and len(raw_tld) <= 4:
+            return False
+
         clean = domain.lower().strip(".")
-        if any(c in clean for c in ('/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '\t', '\r', '\n')):
-            return False
-        if "." not in clean:
-            return False
         parts = clean.split(".")
         tld = parts[-1]
+
+        # Reject systemd / init / service units
+        if tld in self._REJECTED_TLDS or f".{tld}" in self._INVALID_EXTENSIONS:
+            return False
         if not re.match(r"^[a-z]{2,24}$", tld):
             return False
-        if f".{tld}" in self._INVALID_EXTENSIONS:
+
+        # Require second-level label length >= 3 (e.g. bad.com is valid, f.Hx is rejected)
+        second_level = parts[-2]
+        if len(second_level) < 3:
             return False
+
         for part in parts:
             if not part or len(part) > 63:
                 return False
             if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", part):
                 return False
-        if clean in ("localhost", "example.com", "test.com", "a.out", "ldr", "classes.dexpk", "classes.dex"):
+
+        # Rejection of common non-domain binary strings and files
+        if clean in ("localhost", "example.com", "test.com", "a.out", "ldr", "classes.dexpk", "classes.dex", "rc.local"):
             return False
         if "dex" in clean and clean.endswith("pk"):
+            return False
+        if clean.endswith(".so") or clean.startswith("lib") and ".so" in clean:
             return False
         return True

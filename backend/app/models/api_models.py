@@ -225,9 +225,7 @@ def risk_score_to_status(score: int) -> str:
 
 def threat_level_from_score(score: int) -> str:
     """Map a 0-100 risk score to a named threat level per the E-Rakshak scale."""
-    if score >= 90:
-        return "SEVERE"
-    elif score >= 70:
+    if score >= 70:
         return "CRITICAL"
     elif score >= 40:
         return "HIGH"

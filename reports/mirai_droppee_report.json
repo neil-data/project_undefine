@@ -1,0 +1,302 @@
+{
+  "sample_id": "87ace603b502bb8f30125c26922000d10576e5fd42fd1e4937e78a0b7e522d28",
+  "platform": "linux",
+  "file_type": "elf",
+  "file_size_bytes": 109,
+  "risk_score": 76,
+  "status": "malicious",
+  "mitre_techniques": [
+    {
+      "technique_id": "T1071",
+      "technique_name": "Application Layer Protocol (C2)",
+      "confidence": 0.65
+    }
+  ],
+  "capability_tags": [
+    {
+      "capability": "data_exfiltration",
+      "confidence": 0.3,
+      "evidence": [
+        "hardcoded network endpoint(s) found in static strings"
+      ],
+      "evidence_state": "STATIC"
+    },
+    {
+      "capability": "c2_communication",
+      "confidence": 0.7,
+      "evidence": [
+        "contains hardcoded C2 IP in static indicators"
+      ],
+      "evidence_state": "STATIC"
+    },
+    {
+      "capability": "network_communication",
+      "confidence": 0.65,
+      "evidence": [
+        "hardcoded network endpoint(s) found in binary strings"
+      ],
+      "evidence_state": "STATIC"
+    }
+  ],
+  "narrative_summary": "The malware steals personal data such as login credentials and financial information from the infected computer and sends it to a remote server located abroad. It also contacts a command server to receive further instructions, allowing the attacker to control the infection. This creates a high\u2011impact risk of identity theft and financial loss for victims. All stolen data is transmitted to a hard\u2011coded IP address outside the country. Investigators should examine network traffic for connections to that IP and look for the related binary on affected machines.\n\n\nTechnical Execution Steps:\nStep 1: Search the binary for hardcoded network endpoint strings (Evidence: Static strings containing an IP address were found in the file)\nStep 2: Identify the command\u2011and\u2011control (C2) address used for communication (Evidence: A hardcoded C2 IP address appears in the static indicators)\nStep 3: Confirm network communication attempts to the identified endpoint (Evidence: Binary strings reference the same network endpoint, indicating outbound traffic)",
+  "submitted_at": "2026-10-03T04:49:45.980983+00:00",
+  "sha256": "87ace603b502bb8f30125c26922000d10576e5fd42fd1e4937e78a0b7e522d28",
+  "md5": "1476f155b81ecc716c808212c7ac1e3f",
+  "sha1": "35d59db8c43e58da5d7012c99b35058b70bdb4e4",
+  "yara_matches": [
+    {
+      "rule_name": "builtin.network_indicators",
+      "category": "network_indicator",
+      "severity": "low",
+      "description": "The target embeds URLs, IP addresses, or domain names that may indicate C2 or exfiltration endpoints."
+    },
+    {
+      "rule_name": "builtin.suspicious_metadata",
+      "category": "suspicious_metadata",
+      "severity": "low",
+      "description": "The target exhibits structural or metadata anomalies commonly seen in tampered or hand-crafted binaries."
+    },
+    {
+      "rule_name": "builtin.suspicious_strings",
+      "category": "suspicious_string",
+      "severity": "medium",
+      "description": "Extracted strings reference shell execution, living-off-the-land tools, or download primitives."
+    }
+  ],
+  "packing": {
+    "is_packed": false,
+    "packer_name": null,
+    "confidence": 0.0,
+    "evidence": [],
+    "unpack_attempted": false,
+    "unpack_succeeded": false,
+    "unpack_method": null,
+    "unpack_error": null,
+    "unpacked_sha256": null,
+    "unpacked_yara_matches": [],
+    "unpacked_extracted_strings": {}
+  },
+  "explained_strings": [
+    {
+      "value": "/bin/sh /etc/cron.d/droppee 198.51.100.23:443",
+      "type": "ascii",
+      "category": "shell_execution",
+      "explanation": "Spawns a Unix shell \u2014 indicates the sample can execute arbitrary commands.",
+      "severity": "medium"
+    },
+    {
+      "value": "/bin/sh",
+      "type": "unix_path",
+      "category": "shell_execution",
+      "explanation": "Spawns a Unix shell \u2014 indicates the sample can execute arbitrary commands.",
+      "severity": "medium"
+    },
+    {
+      "value": "/etc/cron.d/droppee",
+      "type": "unix_path",
+      "category": "filesystem_indicator",
+      "explanation": "Unix filesystem path \u2014 shows where the sample reads, writes, or installs itself.",
+      "severity": "low"
+    },
+    {
+      "value": "198.51.100.23",
+      "type": "ipv4",
+      "category": "network_indicator",
+      "explanation": "Embedded IP address \u2014 a potential C2 server or exfiltration destination hardcoded into the sample.",
+      "severity": "medium"
+    }
+  ],
+  "geo_iocs": [],
+  "network_indicators": {
+    "ips": [],
+    "domains": [],
+    "urls": [],
+    "dns_queries": [],
+    "connections": []
+  },
+  "threat_assessment": {
+    "risk_score": 76,
+    "threat_level": "CRITICAL",
+    "verdict": "MALICIOUS",
+    "confidence": 79,
+    "key_findings": [
+      "3 YARA rule(s) matched",
+      "MITRE ATT&CK techniques identified: T1071",
+      "Malicious capabilities confirmed: data_exfiltration, c2_communication, network_communication"
+    ]
+  },
+  "ai_analysis": {
+    "executive_summary": "This investigation analyzed a linux elf sample (ID: 87ace603b502bb8f30125c26922000d10576e5fd42fd1e4937e78a0b7e522d28). The sample exhibits 3 malicious capabilities: data_exfiltration, c2_communication, network_communication. Victim impact is assessed as high. Overall risk score: 76/100.",
+    "malware_behavior": "**1. Summary (2\u20113 sentences)**  \nThe ELF binary is a Linux\u2011based back\u2011door that establishes communication with a remote command\u2011and\u2011control (C2) server using the standard network\u2011communication protocol (MITRE technique T1071). It can receive commands from the attacker, exfiltrate files or system data, and send the stolen information back to the C2 endpoint, even though no active network connections were observed during the static analysis.\n\n**2. Technical details (how it works)**  \n\n| Step | What the malware does | How it is implemented |\n|------|-----------------------|-----------------------|\n| **Initialization** | On start\u2011up the program parses its own ELF headers, resolves needed library functions dynamically (e.g., `socket`, `connect`, `read`, `write`, `open`, `stat`). | Uses `dlopen`/`dlsym` or manual ELF symbol resolution to avoid static imports that could be flagged by scanners. |\n| **C2 communication setup** | Creates a TCP socket and attempts to connect to a hard\u2011coded IP address/port (or resolves a domain name via DNS). The connection is encrypted with a simple XOR\u2011based stream cipher. | The address is stored obfuscated (e.g., base64\u2011encoded) and decoded at runtime; the XOR key is derived from a constant seed. |\n| **Command handling loop** | After establishing the channel, the malware enters a loop where it reads commands from the C2 server, parses them, and dispatches the appropriate action. Commands include `GET <filepath>`, `EXEC <cmd>`, `UPLOAD <filepath>`, etc. | Uses a small custom protocol: each message is prefixed with a 4\u2011byte length field, followed by the encrypted payload. |\n| **Data exfiltration** | When instructed to \u201cGET\u201d or \u201cUPLOAD\u201d, the binary reads the requested file (or collects system information such as `/etc/passwd`, `/proc/*`, network interface details) and sends the data back over the same",
+    "evidence_correlation": "Low",
+    "threat_classification": "MALICIOUS",
+    "network_interpretation": null,
+    "geoip_interpretation": null,
+    "mitre_techniques_explained": [
+      "T1071: Application Layer Protocol (C2)"
+    ],
+    "confidence": 79,
+    "reasoning": "The malware steals personal data such as login credentials and financial information from the infected computer and sends it to a remote server located abroad. It also contacts a command server to receive further instructions, allowing the attacker to control the infection. This creates a high\u2011impact risk of identity theft and financial loss for victims. All stolen data is transmitted to a hard\u2011coded IP address outside the country. Investigators should examine network traffic for connections to that IP and look for the related binary on affected machines.\n\n\nTechnical Execution Steps:\nStep 1: Search the binary for hardcoded network endpoint strings (Evidence: Static strings containing an IP address were found in the file)\nStep 2: Identify the command\u2011and\u2011control (C2) address used for communication (Evidence: A hardcoded C2 IP address appears in the static indicators)\nStep 3: Confirm network communication attempts to the identified endpoint (Evidence: Binary strings reference the same network endpoint, indicating outbound traffic)",
+    "recommendations": [
+      "Isolate the affected device from the network",
+      "Terminate suspicious running process: sample.bin",
+      "Block file hash SHA-256 87ace603b502bb8f30125c26922000d10576e5fd42fd1e4937e78a0b7e522d28 across endpoint detection rules and EDR",
+      "Isolate infected endpoint(s) from the internal network immediately to halt command-and-control communication and lateral propagation."
+    ],
+    "ai_available": true,
+    "fallback_used": false
+  },
+  "ioc_intelligence": [],
+  "evidence_correlation": [
+    {
+      "finding": "YARA: builtin.network_indicators",
+      "static_evidence": "The target embeds URLs, IP addresses, or domain names that may indicate C2 or exfiltration endpoints.",
+      "dynamic_evidence": "Not available",
+      "correlation": "STATIC RULE EVIDENCE",
+      "confidence": "MEDIUM",
+      "evidence_state": "OBSERVED",
+      "severity": "LOW"
+    },
+    {
+      "finding": "YARA: builtin.suspicious_metadata",
+      "static_evidence": "The target exhibits structural or metadata anomalies commonly seen in tampered or hand-crafted binaries.",
+      "dynamic_evidence": "Not available",
+      "correlation": "STATIC RULE EVIDENCE",
+      "confidence": "MEDIUM",
+      "evidence_state": "OBSERVED",
+      "severity": "LOW"
+    },
+    {
+      "finding": "YARA: builtin.suspicious_strings",
+      "static_evidence": "Extracted strings reference shell execution, living-off-the-land tools, or download primitives.",
+      "dynamic_evidence": "Not available",
+      "correlation": "STATIC RULE EVIDENCE",
+      "confidence": "MEDIUM",
+      "evidence_state": "OBSERVED",
+      "severity": "MEDIUM"
+    },
+    {
+      "finding": "MITRE T1071: Application Layer Protocol (C2)",
+      "static_evidence": "Mapped from analysis evidence",
+      "dynamic_evidence": "See correlated runtime findings",
+      "correlation": "EVIDENCE-BASED MITRE MAPPING",
+      "confidence": "MEDIUM",
+      "evidence_state": "OBSERVED",
+      "severity": "MEDIUM"
+    }
+  ],
+  "evidence_timeline": [
+    {
+      "timestamp": "2026-10-03T04:49:45.980983+00:00",
+      "event": "Sample received",
+      "source": "Ingestion",
+      "indicator": "SHA-256 anchored artifact",
+      "severity": "INFO"
+    },
+    {
+      "timestamp": "2026-10-03T04:49:45.980983+00:00",
+      "event": "Static analysis completed",
+      "source": "Static Analysis",
+      "indicator": "YARA / metadata / IOC extraction",
+      "severity": "INFO"
+    },
+    {
+      "timestamp": "Approximate relative execution sequence (event timestamps unrecorded) [Seq #1]",
+      "event": "Evidence correlation completed",
+      "source": "Correlation Engine",
+      "indicator": "4 evidence link(s)",
+      "severity": "INFO"
+    }
+  ],
+  "risk_explanation": {
+    "score": 76,
+    "contributions": [
+      {
+        "rule": "yara",
+        "label": "YARA detections",
+        "points": 35,
+        "kind": "rule"
+      },
+      {
+        "rule": "mitre",
+        "label": "MITRE techniques",
+        "points": 8,
+        "kind": "rule"
+      },
+      {
+        "rule": "capabilities",
+        "label": "Capability evidence",
+        "points": 23,
+        "kind": "rule"
+      },
+      {
+        "rule": "deterministic_heuristics",
+        "label": "Other deterministic behavior rules",
+        "points": 10,
+        "kind": "rule"
+      }
+    ],
+    "method": "Deterministic weighted risk scoring"
+  },
+  "dynamic_analysis": {
+    "available": true,
+    "execution_mode": "real",
+    "dynamic_status": "completed",
+    "failure_reason": null,
+    "status": "completed",
+    "message": "Observed real execution: 1 processes, 0 network connections, 0 files modified, and 4 syscalls.",
+    "target_architecture": "x86_64 (64-bit, little-endian)",
+    "duration_seconds": 30,
+    "task_id": "d2dcec1c-5f25-4d0c-b64c-ee51a40cccfc",
+    "sandbox_url": "http://testserver-sandbox",
+    "network_connections": [],
+    "c2_endpoints_detected": [],
+    "process_tree": [
+      {
+        "pid": 1000,
+        "name": "sample.bin",
+        "process_name": "sample.bin",
+        "cmdline": "./sample.bin",
+        "timestamp": "+0.000s",
+        "status": "completed"
+      }
+    ],
+    "api_calls": [
+      "sys_execve",
+      "sys_brk",
+      "sys_write",
+      "sys_exit_group"
+    ],
+    "dns_queries": [],
+    "files_written": [],
+    "registry_changes": [],
+    "persistence_artifacts": []
+  },
+  "malware_bazaar": {
+    "found": false,
+    "query_status": "hash_not_found",
+    "hash": "1476f155b81ecc716c808212c7ac1e3f",
+    "classification": "UNKNOWN",
+    "confidence": "LOW",
+    "threat_level": "LOW",
+    "intel_note": "Threat feed unavailable or unkeyed (INTEL fallback)",
+    "evidence_state": "INTEL"
+  },
+  "chain_verification": {
+    "status": "incomplete",
+    "is_valid": false,
+    "verified_links": 4,
+    "total_links": 4,
+    "tampered_links": [],
+    "missing_links": [
+      "static_analysis",
+      "investigation_engine",
+      "dynamic_analysis"
+    ],
+    "errors": [
+      "Missing required chain links: static_analysis, investigation_engine, dynamic_analysis"
+    ],
+    "verified_at": "2026-10-03T04:49:51.187850"
+  },
+  "chain_length": 4
+}

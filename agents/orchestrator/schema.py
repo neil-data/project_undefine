@@ -84,7 +84,7 @@ class DynamicAnalysisOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     sample_id: str = "sample"
-    execution_mode: Literal["real", "simulated"] = "simulated"
+    execution_mode: str = "real"
     available: bool = True
     status: Optional[str] = "completed"
     dynamic_status: Optional[str] = "completed"  # "completed" | "failed" | "unavailable" | "no_behavior_observed"
@@ -122,7 +122,7 @@ class CapabilityTag(BaseModel):
     capability: str          # e.g. "sms_otp_theft", "keylogging", "gps_tracking"
     confidence: float
     evidence: list[str] = Field(default_factory=list)
-    evidence_state: Optional[Literal["observed", "simulated", "static", "intel"]] = "static"
+    evidence_state: Optional[Literal["OBSERVED", "STATIC", "INTEL", "observed", "static", "intel"]] = "STATIC"
 
 
 class OrchestratorState(TypedDict, total=False):

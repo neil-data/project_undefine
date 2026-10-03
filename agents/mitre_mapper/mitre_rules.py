@@ -176,8 +176,7 @@ def _rule_unix_shell(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
         kw.strip() in ("/bin/sh", "/bin/bash", "/bin/dash")
         for kw in static.extracted_strings.suspicious_keywords
     )
-    has_network = dynamic and len(dynamic.network_connections) > 0
-    if (shell_spawn and has_network) or static_hit:
+    if shell_spawn or static_hit:
         return MitreTechnique(technique_id="T1059.004", technique_name="Command and Scripting Interpreter: Unix Shell", confidence=0.85 if shell_spawn else 0.60)
     return None
 
@@ -235,7 +234,7 @@ def _rule_hidden_files(static: StaticAnalysisOutput, dynamic: Optional[DynamicAn
 
 
 def _rule_debugger_evasion(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
-    """T1622 — Debugger Evasion (ptrace / TracerPid only)."""
+    """T1622 — Debugger Evasion (ptrace / TracerPid only; mprotect alone yields nothing)."""
     anti_debug_terms = ("ptrace", "ptrace_traceme", "tracerpid", "isdebuggerpresent")
     static_hit = any(
         term in kw.lower() for kw in static.extracted_strings.suspicious_keywords for term in anti_debug_terms
@@ -246,7 +245,7 @@ def _rule_debugger_evasion(static: StaticAnalysisOutput, dynamic: Optional[Dynam
     if static_hit or dynamic_hit:
         return MitreTechnique(
             technique_id="T1622",
-            technique_name="Debugger Evasion",
+            technique_name="Debugger Evasion (consistent with anti-debugging)",
             confidence=0.85 if dynamic_hit else 0.65,
         )
     return None
@@ -265,6 +264,26 @@ def _rule_web_protocols(static: StaticAnalysisOutput, dynamic: Optional[DynamicA
             technique_id="T1071.001",
             technique_name="Application Layer Protocol: Web Protocols",
             confidence=0.70,
+        )
+    return None
+
+
+def _rule_init_persistence(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
+    """T1037 / T1543.002 — Persistence via rc.local or systemd service write."""
+    if not dynamic:
+        return None
+    written = [str(f).lower() for f in (dynamic.files_written + dynamic.persistence_artifacts)]
+    if any("rc.local" in f for f in written):
+        return MitreTechnique(
+            technique_id="T1037",
+            technique_name="Boot or Logon Initialization Scripts: rc.local",
+            confidence=0.85,
+        )
+    if any("systemd" in f for f in written):
+        return MitreTechnique(
+            technique_id="T1543.002",
+            technique_name="Create or Modify System Process: systemd Service",
+            confidence=0.85,
         )
     return None
 
@@ -289,6 +308,7 @@ MITRE_RULES = [
     _rule_hidden_files,
     _rule_debugger_evasion,
     _rule_web_protocols,
+    _rule_init_persistence,
 ]
 
 

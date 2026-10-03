@@ -133,15 +133,6 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
         </div>
       </div>
 
-      {/* Simulation Banner when running in simulated mode */}
-      {dyn?.execution_mode === "simulated" && (
-        <div className="bg-[#f4b400]/10 border border-[#f4b400]/30 rounded-lg p-3 text-[#f4b400] text-xs flex items-center gap-2.5 font-mono">
-          <AlertTriangle className="w-4 h-4 shrink-0 text-[#f4b400]" />
-          <div>
-            <span className="font-bold uppercase tracking-wider">Simulation Notice:</span> Dynamic results are simulated; not observed behavior. Analysis was derived from static heuristics and threat intelligence.
-          </div>
-        </div>
-      )}
 
       {/* Failure Banner when dynamic status is failed */}
       {dyn?.dynamic_status === "failed" && (
@@ -164,8 +155,8 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
               SANDBOX TERMINAL // {activeCase.id}
             </span>
             <div className="flex items-center gap-2 text-[10px] font-mono text-[#6F6F6F]">
-              <span className={`w-2 h-2 rounded-full ${dyn?.execution_mode === "simulated" ? "bg-[#f4b400]" : "bg-[#16ff4d] animate-ping"}`} />
-              <span>{dyn?.execution_mode === "simulated" ? "HEURISTIC SIMULATION" : "LIVE GUEST VM"}</span>
+              <span className="w-2 h-2 rounded-full bg-[#16ff4d] animate-ping" />
+              <span>LIVE GUEST VM</span>
             </div>
           </div>
 
@@ -233,7 +224,7 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
             </span>
             <div className="space-y-2 text-[#A0A0A0]">
               <p><span className="text-white font-bold">STATE:</span> <span className="text-[#16ff4d]">{status.toUpperCase()}</span></p>
-              <p><span className="text-white font-bold">MODE:</span> <span className="text-white">{dyn?.execution_mode === "simulated" ? "Simulated Heuristic" : "Real Detonation"}</span></p>
+              <p><span className="text-white font-bold">MODE:</span> <span className="text-white">Real Detonation</span></p>
               <p><span className="text-white font-bold">REAL SANDBOX:</span> <span className="text-white">{(dyn?.real_sandbox_available ?? (dyn?.execution_mode === "real")) ? "Yes" : "No"}</span></p>
               {dyn?.target_architecture && (
                 <p><span className="text-white font-bold">ARCH:</span> <span className="text-white">{dyn.target_architecture}</span></p>

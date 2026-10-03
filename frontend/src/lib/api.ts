@@ -84,7 +84,7 @@ export interface NetworkIndicators {
 
 export interface ThreatAssessment {
   risk_score: number;
-  threat_level: string;  // LOW | MEDIUM | HIGH | CRITICAL | SEVERE
+  threat_level: string;  // LOW | MEDIUM | HIGH | CRITICAL
   verdict: string;       // CLEAN | SUSPICIOUS | MALICIOUS
   confidence: number;    // 0-100
   key_findings: string[];

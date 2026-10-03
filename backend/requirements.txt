@@ -19,5 +19,6 @@ elasticsearch>=8.13.0,<9
 redis>=5.0.0
 geoip2>=4.8.0
 scapy>=2.5.0
+dpkt>=1.9.8
 pyzipper>=0.4.0
 -e ./static-analysis

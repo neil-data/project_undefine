@@ -10,9 +10,9 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
-def test_threat_level_covers_all_five_levels():
+def test_threat_level_covers_all_levels():
     from backend.app.models.api_models import threat_level_from_score
-    assert [threat_level_from_score(score) for score in (0, 20, 40, 70, 90)] == ["LOW", "MEDIUM", "HIGH", "CRITICAL", "SEVERE"]
+    assert [threat_level_from_score(score) for score in (0, 20, 40, 70, 90)] == ["LOW", "MEDIUM", "HIGH", "CRITICAL", "CRITICAL"]
 
 
 def test_verdict_and_confidence_contracts():

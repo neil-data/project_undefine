@@ -349,7 +349,14 @@ class InvestigationEngine:
                     device_integrity.append("Command & control communication detected")
                     privacy_risks.append("Remote control capability")
         
-        # Determine overall impact aligned with risk score and actual compromise
+        # Determine overall impact aligned with risk score and actual compromise:
+        # 'critical' only with OBSERVED malicious behavior or intel floor; else max 'high'.
+        has_intel_floor = bool(state.get("intel_floor") or (state.get("malware_bazaar") and state.get("malware_bazaar").get("signature")))
+        has_observed_malicious = bool(device_integrity) or any(
+            str(f).startswith("/etc/") or str(f).startswith("/dev/shm/") or "/." in str(f)
+            for f in dynamic.get("files_written", [])
+        ) if dynamic else False
+
         if state.get("victim_impact") and isinstance(state.get("victim_impact"), str):
             overall_impact = state.get("victim_impact")
         else:
@@ -369,6 +376,9 @@ class InvestigationEngine:
                 overall_impact = "medium"
             else:
                 overall_impact = "low"
+
+        if overall_impact == "critical" and not (has_observed_malicious or has_intel_floor):
+            overall_impact = "high"
         
         explanation = f"The malware poses a {overall_impact} risk to the victim. "
         if financial_risks:
@@ -470,56 +480,117 @@ class InvestigationEngine:
         return {**state, "exfiltration_analysis": exfiltration_analysis}
     
     def _generate_recommendations(self, state: InvestigationState) -> InvestigationState:
-        """Generate actionable recommendations for investigators."""
+        """Generate actionable, deduplicated recommendations for investigators."""
         print("[InvestigationEngine] Generating recommendations...")
         
-        static = state.get("static_output", {})
-        dynamic = state.get("dynamic_output", {})
-        capabilities = state.get("capability_tags", [])
+        static = state.get("static_output") or {}
+        dynamic = state.get("dynamic_output") or {}
+        capabilities = state.get("capability_tags") or []
         victim_impact = state.get("victim_impact")
         exfiltration = state.get("exfiltration_analysis")
+
+        is_elf = (
+            static.get("platform") == "linux"
+            or static.get("file_type") == "elf"
+            or str(static.get("platform", "")).lower() == "linux"
+        )
+        has_credential_theft = any(
+            "credential" in c.lower() or "keylog" in c.lower() or "password" in c.lower()
+            for c in [cap.get("capability", "") for cap in capabilities]
+        )
         
         recommendations: List[Recommendation] = []
+        seen_actions: set[str] = set()
+
+        def add_rec(rec: Recommendation):
+            if rec.action not in seen_actions:
+                seen_actions.add(rec.action)
+                recommendations.append(rec)
         
         # Immediate containment recommendations
         if victim_impact and victim_impact.overall_impact in ["high", "critical"]:
-            recommendations.append(Recommendation(
+            add_rec(Recommendation(
                 priority="immediate",
                 category="containment",
                 action="Isolate the affected device from the network",
-                rationale="High-risk malware detected with potential for data exfiltration"
+                rationale="High-risk malware detected with potential for data exfiltration and lateral movement"
             ))
             
-            recommendations.append(Recommendation(
-                priority="immediate",
-                category="victim",
-                action="Advise victim to change all passwords from a clean device",
-                rationale="Credential theft capability detected"
-            ))
-        
-        # Evidence collection recommendations
-        if dynamic and dynamic.get("network_connections"):
-            recommendations.append(Recommendation(
+            # For ELF/Linux, only advise password change if credential theft is evidenced
+            if not is_elf or has_credential_theft:
+                add_rec(Recommendation(
+                    priority="immediate",
+                    category="victim",
+                    action="Advise victim to change all passwords from a clean device",
+                    rationale="Credential theft capability detected"
+                ))
+
+        # Network endpoints: block observed IPs and sinkhole domains
+        if dynamic:
+            for conn in dynamic.get("network_connections", []):
+                ip = conn.get("dest_ip") or conn.get("ip")
+                if ip and ip not in ("127.0.0.1", "0.0.0.0"):
+                    add_rec(Recommendation(
+                        priority="immediate" if conn.get("flagged_c2") else "high",
+                        category="containment",
+                        action=f"Block outbound traffic to IP {ip} at perimeter firewalls",
+                        rationale="Observed network communication during detonation"
+                    ))
+            for domain in dynamic.get("dns_queries", []):
+                if domain and "." in domain:
+                    add_rec(Recommendation(
+                        priority="high",
+                        category="containment",
+                        action=f"Sinkhole or block DNS resolution for domain {domain}",
+                        rationale="Observed DNS resolution attempt during detonation"
+                    ))
+
+        # Written persistence artifacts
+        if dynamic:
+            for p in dynamic.get("persistence_artifacts", []):
+                if p:
+                    add_rec(Recommendation(
+                        priority="high",
+                        category="containment",
+                        action=f"Remove persistence artifact: {p}",
+                        rationale="Malware autostart persistence established on system"
+                    ))
+            # Dropped files
+            for f in dynamic.get("files_written", []):
+                if f and not f.startswith("/proc/") and not f.startswith("/dev/"):
+                    add_rec(Recommendation(
+                        priority="high",
+                        category="containment",
+                        action=f"Delete dropped or modified file: {f}",
+                        rationale="Filesystem modification observed during detonation"
+                    ))
+            # Process tree termination
+            for proc in dynamic.get("process_tree", []):
+                p_name = proc.get("name") or proc.get("cmdline")
+                if p_name and p_name not in ("strace", "bash", "sh"):
+                    add_rec(Recommendation(
+                        priority="high",
+                        category="containment",
+                        action=f"Terminate suspicious running process: {p_name}",
+                        rationale="Process spawned during sample execution"
+                    ))
+
+        # Static file SHA-256 block
+        sample_hash = static.get("sha256") or state.get("sample_id")
+        if sample_hash and len(sample_hash) == 64:
+            add_rec(Recommendation(
                 priority="high",
-                category="evidence",
-                action="Capture network traffic logs for forensic analysis",
-                rationale="Network connections detected - traffic may contain exfiltrated data"
+                category="containment",
+                action=f"Block file hash SHA-256 {sample_hash} across endpoint detection rules and EDR",
+                rationale="Malicious artifact identification"
             ))
         
-        if static and static.get("file_type") == "apk":
-            recommendations.append(Recommendation(
-                priority="high",
-                category="evidence",
-                action="Extract and analyze APK manifest and DEX files",
-                rationale="Android package requires deep static analysis for full understanding"
-            ))
-        
-        # Investigation recommendations
+        # Capability-specific recommendations
         for cap in capabilities:
             cap_name = cap.get("capability", "")
             
             if "sms" in cap_name.lower() or "otp" in cap_name.lower():
-                recommendations.append(Recommendation(
+                add_rec(Recommendation(
                     priority="high",
                     category="investigation",
                     action="Review victim's SMS logs for unauthorized messages",
@@ -527,7 +598,7 @@ class InvestigationEngine:
                 ))
             
             if "gps" in cap_name.lower() or "location" in cap_name.lower():
-                recommendations.append(Recommendation(
+                add_rec(Recommendation(
                     priority="medium",
                     category="investigation",
                     action="Obtain location history from service providers",
@@ -536,29 +607,20 @@ class InvestigationEngine:
         
         # Financial recommendations
         if victim_impact and victim_impact.financial_risks:
-            recommendations.append(Recommendation(
+            add_rec(Recommendation(
                 priority="high",
                 category="victim",
                 action="Advise victim to contact banks and enable transaction monitoring",
                 rationale="Financial risks identified: " + ", ".join(victim_impact.financial_risks)
             ))
         
-        # Exfiltration-specific recommendations
-        if exfiltration and exfiltration.destinations:
-            recommendations.append(Recommendation(
-                priority="high",
-                category="investigation",
-                action="Investigate identified exfiltration destinations",
-                rationale=f"Data being sent to {len(exfiltration.destinations)} destination(s)"
-            ))
-        
-        # Device integrity recommendations
-        if victim_impact and victim_impact.device_integrity:
-            recommendations.append(Recommendation(
+        # If no specific indicators found
+        if not recommendations:
+            add_rec(Recommendation(
                 priority="medium",
                 category="containment",
-                action="Perform full device factory reset after evidence collection",
-                rationale="System compromise detected - full cleanup required"
+                action=f"No network or file indicators were produced. Block the SHA-256 ({sample_hash or 'sample'}) and review the host manually.",
+                rationale="Baseline security containment without active detonation observables"
             ))
         
         # Sort by priority

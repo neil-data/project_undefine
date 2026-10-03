@@ -27,8 +27,19 @@ _EI_OSABI = {
 }
 _E_TYPE = {0: "none", 1: "rel", 2: "exec", 3: "dyn", 4: "core"}
 _MACHINES = {
-    3: "x86", 8: "mips", 20: "ppc", 21: "ppc64", 40: "arm", 50: "ia64",
-    62: "x86_64", 183: "arm64", 243: "riscv",
+    2: "SPARC",
+    3: "x86",
+    4: "m68k",
+    8: "MIPS",
+    20: "PPC",
+    21: "PPC64",
+    40: "ARM",
+    42: "SH",
+    43: "SPARCV9",
+    50: "ia64",
+    62: "x86_64",
+    183: "AArch64",
+    243: "RISC-V",
 }
 _PT_TYPES = {
     0: "null", 1: "load", 2: "dynamic", 3: "interp", 4: "note", 5: "shlib",
@@ -95,7 +106,7 @@ class ElfParser:
             ei_osabi=_EI_OSABI.get(ei_osabi_raw, hex(ei_osabi_raw)),
             ei_abiversion=ei_abiversion,
             e_type=_E_TYPE.get(e_type_raw, hex(e_type_raw)),
-            e_machine=_MACHINES.get(e_machine_raw, hex(e_machine_raw)),
+            e_machine=_MACHINES.get(e_machine_raw, f"e_machine=0x{e_machine_raw:04x} (unmapped)"),
             e_version=e_version,
             e_entry=e_entry,
             e_phoff=e_phoff,
