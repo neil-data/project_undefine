@@ -35,6 +35,11 @@ sandbox/samples/
 dynamic-sandbox/mobsf/test_files/
 sandbox/adapters/mobsf/test_files/
 
+# Binary captures, databases, and temporary files
+*.pcap
+*.pcapng
+*.mmdb
+*.tmp
 sandbox-host/artifacts/
 sandbox/host/artifacts/
 scratch/

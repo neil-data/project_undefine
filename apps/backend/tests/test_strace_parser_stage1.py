@@ -7,10 +7,25 @@ from backend.app.strace_parser import parse_strace_output, parse_pcap_dns
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "synthetic_logs"
 
+_PCAP_B64 = (
+    "1MOyoQIABAAAAAAAAAAAAP//AAABAAAABXvAau1hBQBVAAAAVQAAAAw2I1FJIPCmVB1s6wgARQAARwABAABAETEhwKhkMsCo"
+    "ZAGybgA1ADNhiwAAAQAAAQAAAAAAAAZ1cGRhdGUObWFsaWNpb3VzLWZlZWQDb3JnAAABAAEFe8Bq1WUFAH4AAAB+AAAADDYj"
+    "UUkg8KZUHWzrCABFAABwAAEAAEARMPjAqGQBwKhkMgA1sm4AXOisAACBAAABAAEAAAAABnVwZGF0ZQ5tYWxpY2lvdXMtZmVl"
+    "ZANvcmcAAAEAAQZ1cGRhdGUObWFsaWNpb3VzLWZlZWQDb3JnAAABAAEAAAA8AATAqGQB"
+)
+
+
+def _ensure_pcap_fixture(path: Path) -> None:
+    if not path.is_file():
+        import base64
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(base64.b64decode(_PCAP_B64))
+
 
 def test_parse_pcap_dns():
     """Verify dpkt/scapy parses DNS queries and maps answers to domains."""
     pcap_path = FIXTURES_DIR / "sample_capture.pcap"
+    _ensure_pcap_fixture(pcap_path)
     assert pcap_path.is_file(), "sample_capture.pcap must exist"
 
     queries, ip_map = parse_pcap_dns(pcap_path)
@@ -22,6 +37,7 @@ def test_native_strace_parser_full():
     """Verify parsing native strace with interleaved lines, failed exec, ptrace, and bridge mapping."""
     log_path = FIXTURES_DIR / "native_strace.log"
     pcap_path = FIXTURES_DIR / "sample_capture.pcap"
+    _ensure_pcap_fixture(pcap_path)
     fs_diff_path = FIXTURES_DIR / "fs_diff.json"
 
     fs_diff = json.loads(fs_diff_path.read_text())
