@@ -1,0 +1,146 @@
+{
+  "score_verdict": {
+    "compiler_generic": {
+      "risk_score": 0,
+      "platform": "linux",
+      "file_type": "elf",
+      "yara_matches": [
+        {
+          "rule_name": "compiler_stub_generic",
+          "category": "COMPILER"
+        }
+      ],
+      "vendors": {
+        "a": "clean",
+        "b": "not_supported"
+      }
+    },
+    "family_only": {
+      "risk_score": 65,
+      "platform": "linux",
+      "file_type": "elf",
+      "yara_matches": [
+        {
+          "rule_name": "mirai_family_specific",
+          "category": "FAMILY_SPECIFIC"
+        }
+      ],
+      "vendors": {}
+    },
+    "intel_floor": {
+      "risk_score": 85,
+      "malware_bazaar": {
+        "found": true,
+        "signature": "Mirai"
+      },
+      "vendors": {}
+    }
+  },
+  "vendor_confidence": {
+    "not_supported": {
+      "vendor_intel": {
+        "a": "not_supported",
+        "b": "unknown",
+        "c": null,
+        "d": "NotCategorized"
+      }
+    },
+    "single": {
+      "vendor_intel": {
+        "one": "Mirai"
+      }
+    },
+    "mixed": {
+      "vendor_intel": {
+        "clean": "clean",
+        "bad": "malware2"
+      }
+    },
+    "yoroi_vxcube_mb": {
+      "vendor_intel": {
+        "YOROI": "Legit File",
+        "vxCube": "malware2"
+      },
+      "signature": "Mirai"
+    }
+  },
+  "timeline": {
+    "submitted_at": "2026-10-04T10:00:00+00:00",
+    "dynamic": {
+      "network_connections": [
+        {
+          "dest_ip": "203.0.113.8",
+          "timestamp": "2026-10-04T10:00:00+00:00"
+        },
+        {
+          "dest_ip": "203.0.113.9",
+          "timestamp": "2026-10-04T10:00:00+00:00"
+        }
+      ],
+      "dns_queries": [
+        "example.org"
+      ]
+    },
+    "correlations": [
+      {
+        "event": "correlated"
+      }
+    ]
+  },
+  "recommendations": {
+    "risk_score": 80,
+    "verdict": "MALICIOUS",
+    "platform": "linux",
+    "existing_recommendations": [
+      "Isolate host",
+      "isolate host"
+    ],
+    "ips": [
+      "203.0.113.1",
+      "203.0.113.2",
+      "203.0.113.3",
+      "203.0.113.4",
+      "203.0.113.5",
+      "203.0.113.6",
+      "203.0.113.7",
+      "203.0.113.8",
+      "203.0.113.9",
+      "203.0.113.10",
+      "203.0.113.11",
+      "203.0.113.12",
+      "203.0.113.13",
+      "203.0.113.14",
+      "203.0.113.15",
+      "203.0.113.16",
+      "203.0.113.17",
+      "203.0.113.18",
+      "203.0.113.19",
+      "203.0.113.20"
+    ],
+    "domains": [
+      "not..domain"
+    ],
+    "static_paths": [
+      "/etc/cron.d/a",
+      "/etc/rc.local"
+    ],
+    "dynamic_paths": []
+  },
+  "mitre": {
+    "linux_static": {
+      "platform": "linux",
+      "technique_id": "T1071",
+      "evidence_state": "STATIC"
+    },
+    "android_static": {
+      "platform": "android",
+      "technique_id": "T1059",
+      "evidence_state": "STATIC"
+    },
+    "dynamic_network": {
+      "platform": "linux",
+      "technique_id": "T1071",
+      "evidence_state": "OBSERVED"
+    }
+  }
+}

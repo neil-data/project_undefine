@@ -142,7 +142,7 @@ def _cap_persistence(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
     if hidden_tmp_static:
         return CapabilityTag(
             capability="persistence",
-            confidence=0.65,
+            confidence=0.5,
             evidence=["statically references hidden persistence payload paths in runtime/temporary directories"],
             evidence_state="STATIC",
         )
@@ -164,7 +164,7 @@ def _cap_cron_persistence(static: StaticAnalysisOutput, dynamic: Optional[Dynami
     if static_hit:
         return CapabilityTag(
             capability="persistence_cron",
-            confidence=0.65,
+            confidence=0.5,
             evidence=["references cron persistence paths in static strings (/etc/cron*)"],
             evidence_state="STATIC",
         )
@@ -285,7 +285,7 @@ def _cap_anti_debug(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnaly
     return None
 
 
-def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
+def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput], intel_infrastructure: bool = False) -> Optional[CapabilityTag]:
     """Command & Control beaconing capability — only with INTEL-confirmed infrastructure or an OBSERVED beacon pattern."""
     evidence = []
     has_beacon = False
@@ -314,6 +314,12 @@ def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[Dynami
             source="sandbox_network",
             state="OBSERVED",
         )
+    if intel_infrastructure:
+        return CapabilityTag(
+            capability="c2_communication", confidence=0.95,
+            evidence=["threat-intelligence hit on network infrastructure"],
+            evidence_state="INTEL", source_type="INTEL", source="infrastructure_intel", state="INTEL",
+        )
 
     # Static strings and YARA hits can identify network indicators, not prove
     # communication or command-and-control behavior.
@@ -336,7 +342,7 @@ def _cap_persistence_init(static: StaticAnalysisOutput, dynamic: Optional[Dynami
     if static_hit:
         return CapabilityTag(
             capability="persistence_init",
-            confidence=0.65,
+            confidence=0.5,
             evidence=["references startup persistence paths in static strings (/etc/init.d, rc.d, or systemd)"],
             evidence_state="STATIC",
         )
@@ -411,11 +417,17 @@ CAPABILITY_RULES = [
 def classify_capabilities(
     static: StaticAnalysisOutput,
     dynamic: Optional[DynamicAnalysisOutput],
+    intel_indicators: Optional[list[dict]] = None,
 ) -> list[CapabilityTag]:
     results: list[CapabilityTag] = []
     seen: set[str] = set()
     for rule in CAPABILITY_RULES:
-        match = rule(static, dynamic)
+        intel_infrastructure = any(
+            item.get("type") in {"IP", "IPV4", "DOMAIN", "URL"}
+            and bool(item.get("threat_intel") or item.get("intel_corroborated"))
+            for item in (intel_indicators or [])
+        )
+        match = rule(static, dynamic, intel_infrastructure) if rule is _cap_c2_communication else rule(static, dynamic)
         if match and match.capability not in seen:
             seen.add(match.capability)
             results.append(match)

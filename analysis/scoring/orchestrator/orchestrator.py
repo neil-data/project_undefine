@@ -151,7 +151,7 @@ def mitre_mapper(state: OrchestratorState) -> OrchestratorState:
 
 def capability_classifier(state: OrchestratorState) -> OrchestratorState:
     """Real rule-based capability classification — see capability_rules.py."""
-    tags = classify_capabilities(state["static_output"], state.get("dynamic_output"))
+    tags = classify_capabilities(state["static_output"], state.get("dynamic_output"), state.get("intel_indicators"))
     print(f"[capability_classifier] Tagged {len(tags)} capability/ies: "
           f"{[t.capability for t in tags]}")
     return {**state, "capability_tags": tags}
@@ -170,7 +170,7 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
     mb = state.get("malware_bazaar")
     if intel_floor:
         score = max(score, intel_floor)
-    elif mb and mb.get("signature"):
+    elif mb and mb.get("found") and mb.get("signature"):
         score = max(score, 85)
 
     # CRITICAL is reserved for corroborated intelligence, observed malicious
@@ -181,6 +181,7 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
     family_hit = any(
         any(family in (getattr(hit, "rule_name", "") or "").lower() for family in family_names)
         and not _is_generic_yara_rule(getattr(hit, "rule_name", "") or "", getattr(hit, "category", "") or "")
+        and ("family_specific" in str(getattr(hit, "category", "")).lower() or "high_confidence" in str(getattr(hit, "category", "")).lower() or str(getattr(hit, "severity", "")).lower() in {"high", "critical"})
         for hit in getattr(static, "yara_matches", [])
     )
     intel_hit = bool(intel_floor or (mb and mb.get("found") and mb.get("signature")))
@@ -189,11 +190,14 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
         getattr(dynamic, "persistence_artifacts", []), getattr(dynamic, "process_tree", []),
         getattr(dynamic, "api_calls", []),
     )))
+    score_cap_reason = None
     if score >= 85 and not (intel_hit or observed_hit or family_hit):
+        score_cap_reason = f"Score capped at 84 from {score}: no intel floor, observed behavior, or family-specific high-confidence hit."
         score = 84
 
     # Compute victim impact deterministically: 'critical' only with OBSERVED malicious behavior or intel floor; else max 'high'.
     is_real = getattr(dynamic, "execution_mode", "real") == "real" if dynamic else False
+    provider_attributed = bool(dynamic and getattr(dynamic, "provider", None) and str(getattr(dynamic, "source_type", "")).upper() == "DYNAMIC")
     has_intel_floor = bool(intel_floor or (mb and mb.get("signature")))
     has_observed_malicious = False
 
@@ -214,7 +218,7 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
         if has_c2_observed or has_compromise_observed or has_download_exec or has_files_written:
             has_observed_malicious = True
 
-    if not is_real:
+    if not (is_real or provider_attributed):
         if score >= 70:
             victim_impact = "high"
         elif score >= 40:
@@ -232,7 +236,7 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
             victim_impact = "low"
 
     print(f"[compute_risk_score] Unified risk score: {score}/100, victim_impact: {victim_impact}")
-    return {**state, "risk_score": score, "victim_impact": victim_impact}
+    return {**state, "risk_score": score, "victim_impact": victim_impact, "risk_score_cap": score_cap_reason}
 
 
 def narrative_agent(state: OrchestratorState) -> OrchestratorState:

@@ -9,7 +9,7 @@ import pytest
 from apps.backend.app.analysis import _build_ioc_intelligence, _extract_network_indicators
 
 INPUTS = Path(__file__).parent / "inputs"
-CASES = [p.stem for p in sorted(INPUTS.glob("*.json"))]
+CASES = [p.stem for p in sorted(INPUTS.glob("*.json")) if p.stem != "day3b_cases"]
 
 
 @pytest.mark.parametrize("case", CASES)

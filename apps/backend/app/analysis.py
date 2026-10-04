@@ -48,8 +48,44 @@ from packages.shared.allowlist import (
     PUBLIC_DNS_RESOLVERS,
     LEGITIMATE_BENIGN_DOMAINS,
 )
+from packages.shared.vendor_verdict_labels import is_clean_vendor_label, is_unrated_vendor_label
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _format_file_size(size_bytes: int) -> str:
+    size = max(0, int(size_bytes or 0))
+    if size < 1024:
+        return f"{size} B"
+    value = float(size)
+    for unit in ("KB", "MB", "GB", "TB"):
+        value /= 1024
+        if value < 1024 or unit == "TB":
+            return f"{value:.1f} {unit}"
+    return f"{value:.1f} TB"
+
+
+def _finalize_report_quality(case_data: dict, stage_timestamps: dict) -> dict:
+    prior = case_data.get("stage_timestamps") or {}
+    for name in ("ingestion", "static", "intel"):
+        stage_timestamps[name] = stage_timestamps.get(name) or prior.get(name)
+    stage_timestamps["report"] = datetime.now(timezone.utc).isoformat()
+    case_data["stage_timestamps"] = dict(stage_timestamps)
+    timeline = case_data.setdefault("evidence_timeline", [])
+    for event in timeline:
+        event.setdefault("timestamp_display", event.get("timestamp") or "not recorded")
+    existing_stages = {event.get("indicator") for event in timeline if event.get("source") == "Pipeline"}
+    for stage in ("ingestion", "static", "intel", "report"):
+        if stage not in existing_stages:
+            timestamp = stage_timestamps.get(stage)
+            timeline.append({"seq": max((int(event.get("seq", 0)) for event in timeline), default=0) + 1, "timestamp": timestamp, "timestamp_display": timestamp or "not recorded", "event": f"{stage.title()} stage completed", "source": "Pipeline", "indicator": stage, "severity": "INFO"})
+    case_data["file_size_formatted"] = _format_file_size(case_data.get("file_size_bytes", 0))
+    explained = case_data.get("explained_strings") or []
+    if len(explained) > 20:
+        remaining = len(explained) - 20
+        case_data["explained_strings"] = explained[:20]
+        case_data["explained_strings_note"] = f"{remaining} additional strings omitted; see full analysis artifacts."
+    return case_data
 
 _graph = build_graph()  # compiled once at import time, reused across all callers
 _static_engine = create_engine()
@@ -627,7 +663,7 @@ def _build_evidence_correlations(raw_static: dict, dynamic_output: Optional[dict
     return cards
 
 
-def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | DynamicAnalysisOutput], correlations: list[dict]) -> list[dict]:
+def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | DynamicAnalysisOutput], correlations: list[dict], stage_timestamps: Optional[dict] = None) -> list[dict]:
     dyn_dict: Optional[dict] = None
     if dynamic_output is not None:
         if hasattr(dynamic_output, "model_dump"):
@@ -635,22 +671,20 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
         elif isinstance(dynamic_output, dict):
             dyn_dict = dynamic_output
 
-    static_ts = submitted_at
-    if submitted_at:
-        try:
-            from datetime import datetime, timezone, timedelta
-            dt = datetime.fromisoformat(str(submitted_at).replace("Z", "+00:00"))
-            static_ts = (dt + timedelta(seconds=1)).isoformat()
-        except Exception:
-            static_ts = f"{submitted_at} (+1s)"
+    stage_timestamps = stage_timestamps or {}
+    static_ts = stage_timestamps.get("static")
 
     source_label = "Dynamic Sandbox"
     timeline = [
         {"seq": 1, "timestamp": submitted_at, "event": "Sample received", "source": "Ingestion", "indicator": "SHA-256 anchored artifact", "severity": "INFO"},
         {"seq": 2, "timestamp": static_ts, "event": "Static analysis completed", "source": "Static Analysis", "indicator": "YARA / metadata / IOC extraction", "severity": "INFO"},
     ]
+    for stage in ("ingestion", "static", "intel"):
+        timeline.append({"seq": len(timeline) + 1, "timestamp": stage_timestamps.get(stage), "timestamp_display": stage_timestamps.get(stage) or "not recorded", "event": f"{stage.title()} stage completed", "source": "Pipeline", "indicator": stage, "severity": "INFO"})
+    for event in timeline:
+        event.setdefault("timestamp_display", event.get("timestamp") or "not recorded")
 
-    event_idx = 3
+    event_idx = len(timeline) + 1
     for conn in (dyn_dict or {}).get("network_connections", []):
         raw_ts = conn.get("timestamp")
         ts = raw_ts or None
@@ -662,6 +696,7 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
             "source": source_label,
             "indicator": f"{conn.get('dest_ip') or conn.get('ip') or 'unknown'}:{conn.get('dest_port') or conn.get('port') or '?'}",
             "severity": "HIGH" if conn.get("flagged_c2") else "MEDIUM",
+            "timestamp_display": ts or "not recorded",
         })
         event_idx += 1
 
@@ -673,6 +708,7 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
             "source": source_label,
             "indicator": str(query),
             "severity": "MEDIUM",
+            "timestamp_display": "not recorded",
         })
         event_idx += 1
 
@@ -684,6 +720,7 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
             "source": "Correlation Engine",
             "indicator": f"{len(correlations)} evidence link(s)",
             "severity": "INFO",
+            "timestamp_display": "not recorded",
         })
     return timeline
 
@@ -700,6 +737,7 @@ def _build_risk_explanation(
     capability_tags: list,
     risk_score: int,
     malware_bazaar: Optional[dict] = None,
+    score_cap_reason: Optional[str] = None,
 ) -> dict:
     yara_matches = static_output.get("yara_matches", []) if isinstance(static_output, dict) else getattr(static_output, "yara_matches", [])
     
@@ -776,6 +814,8 @@ def _build_risk_explanation(
         "contributions": [item for item in parts if item["points"] != 0],
         "method": "Deterministic weighted risk scoring",
     }
+    if score_cap_reason:
+        result["contributions"].append({"rule": "critical_gate", "label": score_cap_reason, "points": 0, "kind": "cap"})
     if intel_floor_applied:
         result["intel_floor_note"] = f"Score floor raised to {risk_score} by MalwareBazaar match (known family: {intel_sig})"
     return result
@@ -836,6 +876,21 @@ def _build_threat_assessment(
 ) -> dict:
     """Build an evidence-based threat assessment dict enriched with threat intel."""
     key_findings: list[str] = []
+    has_intel_floor = bool(malware_bazaar and malware_bazaar.get("found") and malware_bazaar.get("signature"))
+    family_labels = ("mirai", "gafgyt", "mozi", "tsunami", "qbot", "hajime", "bashlite", "dofloo", "xorddos", "chamelgang", "amos")
+    family_hits = set()
+    for match in yara_matches:
+        rule_name = str(match.get("rule_name", "") if isinstance(match, dict) else getattr(match, "rule_name", "")).lower()
+        category = str(match.get("category", "") if isinstance(match, dict) else getattr(match, "category", "")).lower()
+        severity = str(match.get("severity", "") if isinstance(match, dict) else getattr(match, "severity", "")).lower()
+        for family in family_labels:
+            if family in rule_name and ("family_specific" in category or "high_confidence" in category or severity in {"high", "critical"}):
+                family_hits.add(family)
+    has_family_hit = bool(family_hits)
+    corroborated = has_intel_floor or has_dynamic or has_family_hit
+    if risk_score >= 85 and not corroborated:
+        risk_score = 84
+        key_findings.append("Score capped at 84: no threat-intelligence floor, observed behavior, or family-specific high-confidence hit.")
 
     if malware_bazaar and malware_bazaar.get("found"):
         sig = malware_bazaar.get("signature")
@@ -904,8 +959,7 @@ def _build_threat_assessment(
                 confirmed_count += 1
             else:
                 static_count += 1
-        key_findings.append(f"Capabilities identified: {', '.join(caps_with_state)}")
-        key_findings.append(f"{confirmed_count} confirmed capabilities (OBSERVED/INTEL), {static_count} static indicators")
+        key_findings.append(f"Capabilities identified: {confirmed_count} observed/intel, {static_count} static indicators ({', '.join(caps_with_state)})")
 
     if not key_findings:
         key_findings.append(
@@ -914,48 +968,54 @@ def _build_threat_assessment(
 
     # Vendor confidence agreement calculation
     vendor_intel = (malware_bazaar.get("vendor_intel") or {}) if malware_bazaar else {}
-    counted = []
+    counted: list[str] = []
     agreeing = 0
-    _UNRATED_VERDICTS = {"not_supported", "unknown", "none", "unrated", "null", ""}
-    _BENIGN_VERDICTS = {
-        "clean", "unrated", "benign", "legit file", "legit", "legitimate",
-        "safe", "whitelist", "whitelisted", "false positive", "non-malicious"
-    }
-
     for vname, vdata in vendor_intel.items():
-        verdict = None
-        if isinstance(vdata, dict):
-            verdict = vdata.get("verdict") or vdata.get("detection") or vdata.get("threat_name")
-        elif isinstance(vdata, str):
-            verdict = vdata
-        if verdict:
-            v_low = str(verdict).strip().lower()
-            if v_low not in _UNRATED_VERDICTS:
-                counted.append(vname)
-                is_benign = v_low in _BENIGN_VERDICTS or any(b in v_low for b in ("legit", "clean", "safe", "whitelist", "benign"))
-                if not is_benign:
-                    agreeing += 1
+        verdict = (vdata.get("verdict") or vdata.get("detection") or vdata.get("threat_name")) if isinstance(vdata, dict) else vdata
+        if is_unrated_vendor_label(verdict):
+            continue
+        counted.append(str(vname))
+        if not is_clean_vendor_label(verdict):
+            agreeing += 1
 
     mb_sig = (malware_bazaar or {}).get("signature") if malware_bazaar else None
     if mb_sig:
         counted.append("MalwareBazaar")
         agreeing += 1
-
     if counted:
-        computed_conf = max(50, round(95 * (agreeing / len(counted))))
-        if agreeing < len(counted):
-            key_findings.append(f"Vendor disagreement observed ({agreeing}/{len(counted)} agree)")
-    elif mb_sig:
-        computed_conf = 75
+        computed_conf = max(50, round(95 * agreeing / len(counted)))
+        if len(counted) < 3:
+            computed_conf = min(computed_conf, 70)
+        key_findings.append(f"Vendor consensus: ({agreeing}/{len(counted)}) vendors agree.")
+    elif not has_intel_floor:
+        computed_conf = 50
+        key_findings.append("Verdict rests on static rules only; no vendor verdicts were rated.")
     else:
-        computed_conf = confidence_from_signals(len(yara_matches), len(mitre_techniques), has_dynamic)
+        computed_conf = 70
+
+    family_rule_names = set()
+    for match in yara_matches:
+        rule_name = str(match.get("rule_name", "") if isinstance(match, dict) else getattr(match, "rule_name", "")).lower()
+        family_rule_names.update(f for f in family_labels if f in rule_name)
+    vendor_support = agreeing > 0
+    if len(family_rule_names) >= 3 and not vendor_support and not has_intel_floor:
+        key_findings.append("Conflicting family signatures detected; confidence reduced.")
+        computed_conf = max(50, computed_conf - 15)
+
+    if has_family_hit and not has_intel_floor and not has_dynamic:
+        key_findings.append("Verdict rests on static rules only.")
+    final_verdict = verdict_from_score(risk_score)
+    if final_verdict == "MALICIOUS" and not corroborated:
+        final_verdict = "SUSPICIOUS"
+    final_threat_level = threat_level_from_score(risk_score)
 
     return {
         "risk_score": risk_score,
-        "threat_level": threat_level_from_score(risk_score),
-        "verdict": verdict_from_score(risk_score),
+        "threat_level": final_threat_level,
+        "verdict": final_verdict,
         "confidence": computed_conf,
         "key_findings": key_findings,
+        "victim_impact": "critical" if final_threat_level == "CRITICAL" and (has_intel_floor or has_dynamic) else "high" if final_threat_level == "HIGH" else "medium" if final_threat_level == "MEDIUM" else "low",
     }
 
 
@@ -1017,6 +1077,7 @@ def _generate_recommendations(
     existing_recommendations: Optional[list] = None,
     platform: Optional[str] = None,
     static_persistence_paths: Optional[list[str]] = None,
+    intel_family: Optional[str] = None,
 ) -> list[str]:
     """
     Synthesizes actionable, evidence-based recommendations for incident responders.
@@ -1027,8 +1088,9 @@ def _generate_recommendations(
 
     def add_rec(text: str):
         cleaned = text.strip()
-        if cleaned and cleaned not in seen:
-            seen.add(cleaned)
+        key = cleaned.casefold()
+        if cleaned and key not in seen:
+            seen.add(key)
             recs.append(cleaned)
 
     # 1. Include pre-existing recommendations from investigation output
@@ -1047,9 +1109,15 @@ def _generate_recommendations(
         for c in (capabilities or [])
         if (getattr(c, "capability", None) or (isinstance(c, dict) and c.get("capability")))
     }
-    has_credential_evidence = bool(cap_names.intersection({
-        "credential_access", "credential_dumping", "password_theft", "keylogging",
-    }))
+    credential_caps = {"credential_access", "credential_dumping", "password_theft", "keylogging"}
+    has_credential_evidence = any(
+        (c.capability if hasattr(c, "capability") else c.get("capability", "")).lower() in credential_caps
+        and str(c.evidence_state if hasattr(c, "evidence_state") else c.get("evidence_state", "STATIC")).upper() == "OBSERVED"
+        for c in (capabilities or [])
+    )
+    infostealer_family = str(intel_family or "").strip()
+    has_intel_credential = bool(infostealer_family and any(tag in infostealer_family.casefold() for tag in ("infostealer", "amos", "redline", "raccoon", "lumma", "vidar")))
+    may_advise_credentials = has_credential_evidence or has_intel_credential
     mitre_ids = {
         (t.technique_id if hasattr(t, "technique_id") else t.get("technique_id", "")).upper()
         for t in (mitre or [])
@@ -1068,12 +1136,12 @@ def _generate_recommendations(
         if not has_existing_isolation:
             add_rec("Isolate infected endpoint(s) from the internal network immediately to halt command-and-control communication and lateral propagation.")
         plat_lower = str(platform or "").lower()
-        if plat_lower == "android" and has_credential_evidence:
+        if plat_lower == "android" and may_advise_credentials:
             add_rec("Revoke all active session tokens, OAuth grants, and mobile device credentials.")
-        elif plat_lower in ("windows", "pe", "exe") and has_credential_evidence:
+        elif plat_lower in ("windows", "pe", "exe") and may_advise_credentials:
             add_rec("Revoke all active session tokens, Kerberos tickets, and stored credentials accessed from this endpoint.")
         else:
-            if has_credential_evidence:
+            if may_advise_credentials:
                 add_rec("Revoke active SSH keys, local session credentials, and user tokens accessed from this endpoint.")
     elif risk_score >= 30 or verdict == "SUSPICIOUS":
         if not has_existing_isolation:
@@ -1081,8 +1149,10 @@ def _generate_recommendations(
 
     # 3. Network & C2 Blocking (Perimeter Firewall structured rules)
     if c2_ips:
-        for ip in c2_ips[:3]:
-            add_rec(f"Block outbound traffic to confirmed C2 IP {ip} at perimeter firewalls (iptables -A OUTPUT -d {ip} -j DROP).")
+        unique_ips = list(dict.fromkeys(str(ip) for ip in c2_ips))
+        shown = unique_ips[:15]
+        suffix = f"; and {len(unique_ips) - 15} more (see IoC table)" if len(unique_ips) > 15 else ""
+        add_rec(f"Block outbound traffic to confirmed C2 IPs {', '.join(shown)}{suffix}.")
     if c2_domains:
         suspicious_doms = [
             d for d in c2_domains
@@ -1094,8 +1164,9 @@ def _generate_recommendations(
     # 4. Capability-Specific Remediation Actions
     if any("sms" in c for c in cap_names) or "T1517" in mitre_ids:
         add_rec("Audit linked financial accounts and notify mobile operators regarding potential SMS OTP interception and unauthorized transaction attempts.")
-    if has_credential_evidence:
-        add_rec("Enforce out-of-band master password resets across all corporate and administrative accounts used on this workstation.")
+    if may_advise_credentials:
+        family_note = f" (based on intel family match: {infostealer_family})" if has_intel_credential and not has_credential_evidence else ""
+        add_rec(f"Enforce evidence-based credential resets{family_note}.")
     if any("overlay" in c or "phishing" in c for c in cap_names) or "T1417" in mitre_ids:
         add_rec("Inspect accessibility service permissions and overlay privileges (SYSTEM_ALERT_WINDOW) to remove rogue UI hijackers.")
     if any("reverse_shell" in c or "shell" in c for c in cap_names) or "T1059" in mitre_ids:
@@ -1108,7 +1179,7 @@ def _generate_recommendations(
     if persistence_artifacts:
         add_rec(f"Remove persistence artifacts identified during analysis: {'; '.join(str(p) for p in persistence_artifacts[:3])}.")
     elif static_persistence_paths:
-        add_rec(f"Audit and remove suspected static persistence artifacts: {'; '.join(str(p) for p in static_persistence_paths[:3])}.")
+        add_rec(f"Check hosts for these paths: {'; '.join(str(p) for p in static_persistence_paths[:3])}.")
     else:
         registry_changes = (dynamic_output or {}).get("registry_changes") or []
         if registry_changes:
@@ -1122,9 +1193,12 @@ def _generate_recommendations(
         else:
             add_rec("No network or file indicators were produced. Block the SHA-256 and review the host manually.")
 
-    if not has_credential_evidence:
+    if not may_advise_credentials:
         credential_terms = ("password", "oauth", "kerberos", "credential", "token rotation", "reset credentials", "session token", "ssh key")
         recs = [r for r in recs if not any(term in r.lower() for term in credential_terms)]
+    has_observed = any(str(c.get("evidence_state", "STATIC") if isinstance(c, dict) else getattr(c, "evidence_state", "STATIC")).upper() == "OBSERVED" for c in (capabilities or [])) or bool((dynamic_output or {}).get("network_connections") or (dynamic_output or {}).get("files_written") or (dynamic_output or {}).get("persistence_artifacts"))
+    if not has_observed:
+        recs = [r for r in recs if not any(term in r.casefold() for term in ("kill ", "terminate ", "remove persistence", "delete "))]
     return recs
 
 
@@ -1187,6 +1261,7 @@ def _build_ai_analysis(
         existing_recommendations=extracted_recs,
         platform=final_state.get("platform") or (final_state.get("static_output").platform if final_state.get("static_output") else None),
         static_persistence_paths=static_persistence_paths,
+        intel_family=(malware_bazaar or {}).get("signature") if malware_bazaar and malware_bazaar.get("found") else None,
     )
 
     # Network interpretation (from real indicators only)
@@ -1313,6 +1388,7 @@ async def analyze_and_save(
     parser.
     """
     file_path = Path(file_path)
+    stage_timestamps = {"ingestion": datetime.now(timezone.utc).isoformat(), "static": None, "intel": None, "report": None}
     suffix = file_path.suffix.lower()
     is_json = suffix == ".json"
     is_bson = suffix == ".bson"
@@ -1406,6 +1482,7 @@ async def analyze_and_save(
                     mb_data = await malware_bazaar.lookup_hash(data["md5"])
             except Exception as e:
                 _LOGGER.warning(f"MalwareBazaar lookup failed: {e}")
+            stage_timestamps["intel"] = datetime.now(timezone.utc).isoformat()
 
             if mb_data and mb_data.get("found"):
                 for yrule in (mb_data.get("yara_rules") or []):
@@ -1428,6 +1505,7 @@ async def analyze_and_save(
                 pe_analysis=pe_analysis,
                 extracted_strings=extracted_strings,
             )
+            stage_timestamps["static"] = datetime.now(timezone.utc).isoformat()
 
             task_id = (dynamic_part or {}).get("task_id") or str(uuid.uuid4())
             dyn_obj = None
@@ -1488,8 +1566,8 @@ async def analyze_and_save(
             ioc_intelligence = _build_ioc_intelligence(raw_static_dict, dynamic_part, network_indicators, malware_bazaar=mb_data)
             geo_iocs = _reconcile_geoip_severity(geo_iocs, ioc_intelligence)
             evidence_correlation = _build_evidence_correlations(raw_static_dict, dynamic_part, network_indicators, final_state.get("mitre_techniques", []))
-            evidence_timeline = _build_evidence_timeline(static_output.submitted_at, dynamic_part, evidence_correlation)
-            risk_explanation = _build_risk_explanation(static_output, final_state.get("mitre_techniques", []), final_state.get("capability_tags", []), final_state["risk_score"], malware_bazaar=mb_data)
+            evidence_timeline = _build_evidence_timeline(static_output.submitted_at, dynamic_part, evidence_correlation, stage_timestamps)
+            risk_explanation = _build_risk_explanation(static_output, final_state.get("mitre_techniques", []), final_state.get("capability_tags", []), final_state["risk_score"], malware_bazaar=mb_data, score_cap_reason=final_state.get("risk_score_cap"))
 
             # Threat assessment from real signals
             threat_assessment = _build_threat_assessment(
@@ -1611,6 +1689,7 @@ async def analyze_and_save(
         if extra_meta:
             case_data.update(extra_meta)
 
+        _finalize_report_quality(case_data, stage_timestamps)
         await store.save_case(case_data["sample_id"], case_data, event_type=event_type)
         return case_data
     try:
@@ -1695,6 +1774,7 @@ async def analyze_and_save(
             mb_data = await malware_bazaar.lookup_hash(raw_static["md5"])
     except Exception as e:
         _LOGGER.warning(f"MalwareBazaar lookup failed: {e}")
+    stage_timestamps["intel"] = datetime.now(timezone.utc).isoformat()
 
     if mb_data and mb_data.get("found"):
         for yrule in (mb_data.get("yara_rules") or []):
@@ -1735,6 +1815,7 @@ async def analyze_and_save(
         extracted_strings=extracted_strings,
         static_risk_flags=["hardcoded_c2_ip"] if any(match.category == "network_indicator" for match in yara_matches) else [],
     )
+    stage_timestamps["static"] = datetime.now(timezone.utc).isoformat()
 
     # Run orchestrator graph with populated dynamic_output and MB intel
     task_id = getattr(dynamic_out, "task_id", None) or str(uuid.uuid4())
@@ -1760,8 +1841,8 @@ async def analyze_and_save(
     ioc_intelligence = _build_ioc_intelligence(raw_static, dynamic_out, network_indicators, malware_bazaar=mb_data)
     geo_iocs = _reconcile_geoip_severity(geo_iocs, ioc_intelligence)
     evidence_correlation = _build_evidence_correlations(raw_static, dynamic_out, network_indicators, final_state.get("mitre_techniques", []))
-    evidence_timeline = _build_evidence_timeline(static_output.submitted_at, dynamic_out, evidence_correlation)
-    risk_explanation = _build_risk_explanation(static_output, final_state.get("mitre_techniques", []), final_state.get("capability_tags", []), final_state["risk_score"], malware_bazaar=mb_data)
+    evidence_timeline = _build_evidence_timeline(static_output.submitted_at, dynamic_out, evidence_correlation, stage_timestamps)
+    risk_explanation = _build_risk_explanation(static_output, final_state.get("mitre_techniques", []), final_state.get("capability_tags", []), final_state["risk_score"], malware_bazaar=mb_data, score_cap_reason=final_state.get("risk_score_cap"))
 
     # Evidence-based threat assessment (scores derived from real signals only)
     threat_assessment = _build_threat_assessment(
@@ -1855,6 +1936,7 @@ async def analyze_and_save(
     if extra_meta:
         case_data.update(extra_meta)  # e.g. original_filename / mime_type captured at upload time
 
+    _finalize_report_quality(case_data, stage_timestamps)
     await store.save_case(case_data["sample_id"], case_data, event_type=event_type)
     return case_data
 

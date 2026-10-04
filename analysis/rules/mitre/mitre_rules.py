@@ -29,9 +29,15 @@ def _rule_sms_access(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
 
 
 def _rule_c2_comms(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
-    dynamic_c2 = dynamic and any(conn.get("flagged_c2") for conn in dynamic.network_connections)
+    provider_dynamic = bool(
+        dynamic
+        and str(getattr(dynamic, "source_type", "")).upper() == "DYNAMIC"
+        and getattr(dynamic, "provider", None)
+        and getattr(dynamic, "network_connections", [])
+    )
+    dynamic_c2 = dynamic and (any(conn.get("flagged_c2") for conn in dynamic.network_connections) or provider_dynamic)
     if dynamic_c2:
-        return MitreTechnique(technique_id="T1071", technique_name="Application Layer Protocol (C2)", confidence=0.9)
+        return MitreTechnique(technique_id="T1071", technique_name="Application Layer Protocol (C2)", confidence=0.9, evidence_state="OBSERVED", source_type="DYNAMIC", source="hosted_sandbox" if provider_dynamic else "sandbox_network", state="OBSERVED", evidence=["provider-attributed dynamic network evidence" if provider_dynamic else "observed flagged C2 connection"])
     return None
 
 
@@ -334,8 +340,16 @@ def map_to_mitre(
 ) -> list[MitreTechnique]:
     """Run every rule against the combined signal set, return all matches."""
     results: list[MitreTechnique] = []
+    android = str(static.platform).lower() == "android" or str(static.file_type).lower() == "apk"
     for rule in MITRE_RULES:
         match = rule(static, dynamic)
         if match:
+            if android and match.technique_id.startswith("T1056"):
+                match = match.model_copy(update={"technique_id": "T1636.004", "technique_name": "Input Capture: Keylogging"})
+            is_mobile_id = match.technique_id.startswith(("T14", "T15", "T16"))
+            if android != is_mobile_id:
+                continue
+            if dynamic is None and match.evidence_state != "OBSERVED":
+                match = match.model_copy(update={"confidence": min(match.confidence, 0.5), "evidence_state": "STATIC", "source_type": "STATIC", "state": "STATIC"})
             results.append(match)
     return results

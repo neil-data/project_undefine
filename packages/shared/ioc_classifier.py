@@ -40,12 +40,12 @@ class IOCType(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
-def truncate_display_value(value: str, max_len: int = 60) -> str:
-    """Truncate long display values with '…(N more)'."""
+def truncate_display_value(value: str, max_len: int = 80) -> str:
+    """Truncate long display values to a readable prefix and exact remainder count."""
     if len(value) <= max_len:
         return value
     n_more = len(value) - max_len
-    return f"{value[:max_len]}…({n_more} more)"
+    return f"{value[:max_len]}...({n_more} more)"
 
 
 def strip_glued_hex(url: str) -> str:

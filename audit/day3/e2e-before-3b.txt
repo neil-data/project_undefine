@@ -1,0 +1,7 @@
+.............................................F
+================================== FAILURES ===================================
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:84: AssertionError: [static_rule_labeled_intel] Static-derived capability 'c2_communication' labeled as 'INTEL' instead of STATIC
+=========================== short test summary info ===========================
+FAILED tests/e2e/test_e2e_baseline.py::test_source_separation[static_rule_labeled_intel]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 45 passed in 9.91s
