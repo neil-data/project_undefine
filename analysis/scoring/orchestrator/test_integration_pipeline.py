@@ -39,7 +39,7 @@ class TestFullPipelineIntegration:
         capability_names = [c.capability for c in final_state["capability_tags"]]
 
         assert "T1517" in technique_ids  # SMS access
-        assert "T1071" in technique_ids  # C2 comms
+        assert "T1437.001" in technique_ids  # Android network communication (Mobile ATT&CK)
         assert "sms_otp_theft" in capability_names
         assert "data_exfiltration" in capability_names
 

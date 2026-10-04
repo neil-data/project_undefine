@@ -79,7 +79,7 @@ def test_recommendations_raw_case_limits_dedupes_and_scopes_static_paths():
     raw = RAW["recommendations"]
     recs = _generate_recommendations(
         verdict=raw["verdict"], risk_score=raw["risk_score"], capabilities=[], mitre=[],
-        network_indicators={"connections": [{"ip": ip, "flagged_c2": True} for ip in raw["ips"]], "domains": raw["domains"]},
+        network_indicators={"connections": [{"ip": ip, "flagged_c2": True, "evidence_state": "OBSERVED"} for ip in raw["ips"]], "domains": raw["domains"]},
         existing_recommendations=raw["existing_recommendations"], platform=raw["platform"],
         static_persistence_paths=raw["static_paths"],
     )

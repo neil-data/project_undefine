@@ -24,7 +24,7 @@ def _rule_sms_access(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
     sms_api = dynamic and any("SmsManager" in c or "sms" in c.lower() for c in dynamic.api_calls)
     if sms_perm or sms_api:
         confidence = 0.9 if (sms_perm and sms_api) else 0.7
-        return MitreTechnique(technique_id="T1517", technique_name="Access Notifications", confidence=confidence)
+        return MitreTechnique(technique_id="T1517", technique_name="Access Notifications", confidence=confidence, evidence_state="OBSERVED" if sms_api else "STATIC", source_type="DYNAMIC" if sms_api else "STATIC", state="OBSERVED" if sms_api else "STATIC")
     return None
 
 
@@ -37,7 +37,8 @@ def _rule_c2_comms(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalys
     )
     dynamic_c2 = dynamic and (any(conn.get("flagged_c2") for conn in dynamic.network_connections) or provider_dynamic)
     if dynamic_c2:
-        return MitreTechnique(technique_id="T1071", technique_name="Application Layer Protocol (C2)", confidence=0.9, evidence_state="OBSERVED", source_type="DYNAMIC", source="hosted_sandbox" if provider_dynamic else "sandbox_network", state="OBSERVED", evidence=["provider-attributed dynamic network evidence" if provider_dynamic else "observed flagged C2 connection"])
+        android = str(static.platform).lower() == "android" or str(static.file_type).lower() == "apk"
+        return MitreTechnique(technique_id="T1437.001" if android else "T1071", technique_name="Application Layer Protocol (C2)", confidence=0.9, evidence_state="OBSERVED", source_type="DYNAMIC", source="hosted sandbox provider" if provider_dynamic else "sandbox_network", state="OBSERVED", evidence=["provider-attributed dynamic network evidence" if provider_dynamic else "observed flagged C2 connection"])
     return None
 
 
@@ -81,6 +82,7 @@ def _rule_registry_persistence(static: StaticAnalysisOutput, dynamic: Optional[D
                 technique_id="T1547.001",
                 technique_name="Boot or Logon Autostart Execution: Registry Run Keys",
                 confidence=0.85,
+                evidence_state="OBSERVED", source_type="DYNAMIC", source="sandbox_registry", state="OBSERVED",
             )
     return None
 
@@ -93,7 +95,7 @@ def _rule_keylogging(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
     keylog_string = "keylog" in static.extracted_strings.suspicious_keywords
     if keylog_api or keylog_string:
         confidence = 0.85 if keylog_api else 0.6
-        return MitreTechnique(technique_id="T1056.001", technique_name="Input Capture: Keylogging", confidence=confidence)
+        return MitreTechnique(technique_id="T1056.001", technique_name="Input Capture: Keylogging", confidence=confidence, evidence_state="OBSERVED" if keylog_api else "STATIC", source_type="DYNAMIC" if keylog_api else "STATIC", state="OBSERVED" if keylog_api else "STATIC")
     return None
 
 
@@ -128,6 +130,7 @@ def _rule_launchd_persistence(static: StaticAnalysisOutput, dynamic: Optional[Dy
             technique_id="T1543.001",
             technique_name="Create or Modify System Process: Launch Agent",
             confidence=0.85,
+            evidence_state="OBSERVED", source_type="DYNAMIC", source="sandbox_persistence", state="OBSERVED",
         )
     return None
 
@@ -142,7 +145,8 @@ def _rule_ld_preload_hijack(static: StaticAnalysisOutput, dynamic: Optional[Dyna
         return MitreTechnique(
             technique_id="T1574.006",
             technique_name="Hijack Execution Flow: Dynamic Linker Hijacking (LD_PRELOAD)",
-            confidence=0.75 if dynamic_hit else 0.55,
+            confidence=0.75 if dynamic_hit else 0.5,
+            evidence_state="OBSERVED" if dynamic_hit else "STATIC", source_type="DYNAMIC" if dynamic_hit else "STATIC", state="OBSERVED" if dynamic_hit else "STATIC",
         )
     return None
 
@@ -156,7 +160,8 @@ def _rule_setuid_privilege_escalation(static: StaticAnalysisOutput, dynamic: Opt
         return MitreTechnique(
             technique_id="T1548.001",
             technique_name="Abuse Elevation Control Mechanism: Setuid and Setgid",
-            confidence=0.8 if dynamic_hit else 0.55,
+            confidence=0.8 if dynamic_hit else 0.5,
+            evidence_state="OBSERVED" if dynamic_hit else "STATIC", source_type="DYNAMIC" if dynamic_hit else "STATIC", state="OBSERVED" if dynamic_hit else "STATIC",
         )
     return None
 
@@ -344,9 +349,13 @@ def map_to_mitre(
     for rule in MITRE_RULES:
         match = rule(static, dynamic)
         if match:
+            if str(match.evidence_state or "STATIC").upper() != "OBSERVED" and str(match.source_type or "STATIC").upper() != "INTEL":
+                match = match.model_copy(update={"confidence": min(match.confidence, 0.5), "evidence_state": "STATIC", "source_type": "STATIC", "state": "STATIC"})
             if android and match.technique_id.startswith("T1056"):
                 match = match.model_copy(update={"technique_id": "T1636.004", "technique_name": "Input Capture: Keylogging"})
-            is_mobile_id = match.technique_id.startswith(("T14", "T15", "T16"))
+            # Enterprise includes T15xx/T16xx IDs (for example Run Keys
+            # T1547.001); identify Mobile IDs narrowly to retain those rules.
+            is_mobile_id = match.technique_id.startswith("T14") or match.technique_id in {"T1517", "T1626"} or match.technique_id.startswith(("T1624.", "T1636."))
             if android != is_mobile_id:
                 continue
             if dynamic is None and match.evidence_state != "OBSERVED":

@@ -33,3 +33,9 @@ Targeted Day 3, MITRE, risk-scoring, B1, and B3 unit suites passed: 56 tests. E2
 - E2E baseline tail: udit/day3/e2e-before-3b.txt; first failure was 	est_source_separation[static_rule_labeled_intel] (frozen fixture labels a static YARA result INTEL). 45 passed before fail.
 - Before Day 3b raw cases, Layer 2 had no raw-input tests for score/verdict, timeline, recommendations, or MITRE; those areas only had frozen-report validators.
 
+
+## Day 3 regression triage final reconciliation
+- Final full suite: 1066 passed, 1 warning; final e2e: 53 passed, 1 pre-existing manual layout skip.
+- Layer 1: 15/15 checks; Layer 2: 29/29 raw-input cases. `BASELINE_AFTER.md` is the authoritative post-fix matrix and supersedes earlier interim run counts above.
+- Triage: 17 code regressions fixed; 9 policy assertions/inputs updated to encode Day 3 rules. Test changes are captured in `TEST_DIFFS.patch`; no assertion lines were removed.
+- Frozen reports remain unchanged; diff from `677d17c` contains only the fixture manifest and the required `synthetic: true` Mirai metadata.

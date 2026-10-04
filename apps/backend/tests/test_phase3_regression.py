@@ -120,8 +120,8 @@ class TestA12RecommendationsCorrectness:
             mitre=[],
             network_indicators={
                 "connections": [
-                    {"ip": "198.51.100.2", "dest_port": 4444, "flagged_c2": True},
-                    {"ip": "203.0.113.5", "dest_port": 80, "flagged_c2": True},
+                    {"ip": "198.51.100.2", "dest_port": 4444, "flagged_c2": True, "evidence_state": "OBSERVED"},
+                    {"ip": "203.0.113.5", "dest_port": 80, "flagged_c2": True, "evidence_state": "OBSERVED"},
                 ],
                 "domains": [],
             },
@@ -161,7 +161,7 @@ class TestA13EvidenceTimelineLayout:
 
     def test_a13_sample_received_and_static_analysis_timestamps_distinguishable(self):
         submitted_at = "2026-10-03T12:00:00Z"
-        timeline = _build_evidence_timeline(submitted_at, dynamic_output=None, correlations=[])
+        timeline = _build_evidence_timeline(submitted_at, dynamic_output=None, correlations=[], stage_timestamps={"ingestion": submitted_at, "static": "2026-10-03T12:00:01Z"})
 
         assert len(timeline) >= 2
         ev1 = timeline[0]
@@ -180,7 +180,8 @@ class TestA13EvidenceTimelineLayout:
         timeline = _build_evidence_timeline(submitted_at, dynamic_output=dynamic_out, correlations=[])
 
         for item in timeline:
-            ts = item.get("timestamp", "")
+            ts = item.get("timestamp_display", "")
+            assert isinstance(ts, str)
             # Must NOT contain the 80-character explanation sentence in the cell
             assert "Approximate relative execution sequence (event timestamps unrecorded)" not in ts, (
                 f"Timeline cell contains sentence: {ts}"
@@ -188,6 +189,8 @@ class TestA13EvidenceTimelineLayout:
             # Must have a separate seq field
             assert "seq" in item
             assert isinstance(item["seq"], int)
+            if item.get("timestamp") is None:
+                assert ts == "not recorded"
 
 
 # ===========================================================================

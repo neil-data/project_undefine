@@ -472,7 +472,7 @@ class IoCClassifier:
                 source=src,
                 source_type="INTEL" if has_ti else stype,
                 evidence_state="INTEL" if has_ti else estate,
-                related_behavior="Observed network connection" if is_dynamic_observed else "Embedded IP address",
+                related_behavior="Observed network connection" if is_dynamic_observed else "Embedded endpoint IP address",
                 intel_corroborated=has_ti,
                 first_seen=first_seen,
             )

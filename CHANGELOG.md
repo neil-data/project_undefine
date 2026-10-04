@@ -1,5 +1,11 @@
 # Changelog — E-Rakshak Dynamic Sandbox Overhaul & ELF Pipeline Defense
 
+- Day 3 policy: static-only MITRE confidence is capped at 0.5 to avoid presenting static indicators as observed behavior.
+- Day 3 policy: high scores require an intel floor, observed/provider-attributed dynamic evidence, or a family-specific high-confidence rule before MALICIOUS/CRITICAL classification.
+- Day 3 policy: capability summaries distinguish observed/intel findings from static indicators to preserve evidence provenance.
+- Day 3 policy: vendor confidence is capped at 70 when fewer than three sources are counted.
+- Day 3 policy: Android network behavior uses Mobile ATT&CK technique IDs; public DNS resolver contacts remain benign informational evidence, including when observed.
+
 All notable changes to the E-Rakshak malware analysis and triage pipeline are documented in this file.
 
 ## [v4.1.0] — 2026-10-03

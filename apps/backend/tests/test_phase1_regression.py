@@ -55,14 +55,23 @@ def test_a1_threat_intel_yara_is_labeled_intel():
                 "category": "threat_intel",
                 "severity": "high",
                 "description": "Community rule match",
-            }
+            },
+            {
+                "rule_name": "Local_Yara_Rule",
+                "category": "threat_intel",
+                "severity": "high",
+                "description": "Locally scanned rule match",
+            },
         ],
         "extracted_strings": {"ips": [], "urls": []},
         "submitted_at": "2026-01-01T00:00:00Z",
     }
     correlations = _build_evidence_correlations(raw_static, None, {"ips": [], "domains": [], "urls": []}, [])
-    intel_corr = correlations[0]
+    intel_corr = next(c for c in correlations if "[MalwareBazaar]" in c["finding"])
     assert intel_corr["evidence_state"] == "INTEL"
+    assert intel_corr["source_type"] == "INTEL" and intel_corr["source"] == "MalwareBazaar API"
+    local_corr = next(c for c in correlations if "Local_Yara_Rule" in c["finding"])
+    assert local_corr["evidence_state"] == "STATIC" and local_corr["source"] == "Local YARA scan"
 
 
 def test_a1_static_only_mitre_is_labeled_static():
@@ -345,7 +354,7 @@ def test_a3_threat_assessment_wording_capabilities_identified():
     kf = " ".join(assessment["key_findings"])
     assert "Capabilities identified" in kf
     assert "Malicious capabilities confirmed" not in kf
-    assert "0 confirmed capabilities (OBSERVED/INTEL), 1 static indicators" in kf
+    assert "Capabilities identified: 0 observed/intel, 1 static indicators" in kf
 
 
 # =====================================================================
@@ -431,8 +440,8 @@ def test_a4_unrated_and_unknown_are_not_counted():
         has_dynamic=False,
         malware_bazaar=mb_data,
     )
-    # counted = 2 (CERT-PL, MalwareBazaar), agreeing = 2 -> 95
-    assert assessment["confidence"] == 95
+    # Two counted sources are capped at 70 by the Day 3 low-sample policy.
+    assert assessment["confidence"] == 70
 
 
 def test_a4_fully_agreeing_vendors_produce_95():

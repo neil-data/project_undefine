@@ -22,8 +22,13 @@ EXPECTED_VIOLATIONS = {
     "random_fragment_domains": "invalid_fragment_domain",
     "static_cap_exceeded": "static_score_cap_exceeded",
     "static_rule_labeled_intel": "static_rule_claimed_as_intel",
-    "synthetic_mirai_droppee": "static_hit_claimed_as_c2_communication",
+    "synthetic_mirai_droppee": ["ambiguous_duplicate_timestamp", "static_hit_claimed_as_c2_communication", "static_score_cap_exceeded"],
 }
+EXPECTED_DETECTIONS = [
+    (fixture, violation)
+    for fixture, violations in EXPECTED_VIOLATIONS.items()
+    for violation in (violations if isinstance(violations, list) else [violations])
+]
 
 
 def validate_report(report: dict) -> set[str]:
@@ -64,7 +69,7 @@ def validate_report(report: dict) -> set[str]:
     return found
 
 
-@pytest.mark.parametrize("fixture,violation_id", EXPECTED_VIOLATIONS.items())
+@pytest.mark.parametrize("fixture,violation_id", EXPECTED_DETECTIONS)
 def test_original_bad_fixture_trips_expected_validator(fixture: str, violation_id: str) -> None:
     report = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
     assert violation_id in validate_report(report), f"{fixture}: expected detector {violation_id} did not fire"

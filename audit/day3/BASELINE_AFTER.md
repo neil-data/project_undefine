@@ -1,24 +1,26 @@
-# Day 3b post-change test matrix
+# Day 3 regression baseline after fixes
 
-## Layer 1 — frozen fixture detectors
+## Final test runs
 
-| Input set | Expected check | Result |
+- Full suite: **1066 passed**, 1 warning, 255.57s.
+- E2E suite: **53 passed, 1 manual layout skip**, 7.68s.
+- Layer 1: **15 passed**: 12 frozen bug fixtures, 2 additional expected violations for `synthetic_mirai_droppee`, and `clean_control` (zero violations). Fixture-integrity guard passed.
+- Layer 2: **29 passed**: 11 Day 2 raw IOC cases, 8 `analyze_and_save` mocked/raw cases, and 10 Day 3b score/vendor/timeline/recommendation/MITRE/report-quality cases.
+- Remaining e2e product-output assertions run against `clean_control`; the 12 original bad fixtures run through the detector map.
+
+## Raw test matrix
+
+| Layer 2 input group | Test inputs | Result |
 |---|---|---|
-| 12 original bad fixtures | Each fires its mapped violation in `tests/e2e/test_detectors.py` | 13/13 checks passed in final focused run (includes clean control) |
-| `clean_control.json` | Zero violations | Passed |
-| All fixtures | Manifest matches frozen content | Integrity test passed |
+| Day 2 IOC pipeline | Go symbols, random fragments, benign hosts, fabricated narrative, refusal, static rule as intel, static cap exceeded, critical with clean vendors, duplicate timestamps, credential advice without evidence, base64/system libraries | 11/11 passed |
+| Pipeline mocked LLM/YARA | Five LLM failure modes, fabricated/refusal narrative raw inputs, static YARA capability | 8/8 passed |
+| Score and verdict | Compiler/generic Go-style binary, family-specific rules, MalwareBazaar intel floor, explicit cap explanation and exact score sum | Passed |
+| Vendor confidence | Unrated, one vendor, mixed clean/malicious, YOROI/vxCube/MalwareBazaar | 4/4 passed |
+| Timeline | Completion stages, null display, duplicate times with distinct sequence IDs, no synthetic offsets | Passed |
+| Recommendations | Case-insensitive dedupe, isolate/IP limits, persistence wording, evidence-gated credential advice, no invalid sinkhole | Passed |
+| MITRE/capabilities | Static C2 rejection, provider-attributed DYNAMIC C2, platform IDs, static confidence/persistence caps | Passed |
+| Report quality | Runtime timestamps, human-sized file sizes, truncation, explanation-string cap | Passed |
 
-## Layer 2 — raw input cases
+## Prior full-suite failure disposition
 
-| Input/test area | Coverage | Result |
-|---|---|---|
-| Day 2 IOC inputs | Go symbols, fragments, benign hosts, base64/system paths, static cap, credentials, critical/clean vendors, fabricated narrative, refusal, static rule as intel, duplicate times | 11 cases; final focused run stopped before this module |
-| `analyze_and_save` inputs | Mocked LLM failure modes, raw narrative/refusal, static YARA capability | Existing pipeline cases retained; final focused run stopped before this module |
-| Score/verdict | Generic Go-style binary, family-only, intel floor, score cap and explanation sum | Score case passed in final focused run |
-| Vendor confidence | Unsupported, single, mixed, YOROI/vxCube/MalwareBazaar | First case passed; remaining cases not reached after early stop |
-| Timeline | Stage/null timestamps and duplicate sequence labels | Initial assertion expected four same-time records; corrected to the three records present (sample + two network events); not rerun due the four-run e2e limit |
-| Recommendations | Dedupe, isolate cap, IP list cap, static paths, credential evidence | Not reached in final focused run |
-| MITRE/capabilities | Static C2 exclusion, provider network evidence, platform IDs, static confidence | Not reached in final focused run |
-| Report quality | Stage times, file size, truncation, explanation cap | Not reached in final focused run |
-
-The final focused e2e invocation reported 19 passing checks before the timeline assertion stopped execution. The timeline assertion was corrected afterward; no additional e2e run was made to stay within the four-run limit. The first test-first run failed because an unsupported high score was reported as MALICIOUS; the implementation now gates/caps that verdict and adds an explicit cap explanation.
+The 25 failures and collection error recorded before this run are resolved. Triage: `REGRESSION_TRIAGE.md`. Test edits, with no removed assertion lines: `TEST_DIFFS.patch`. Baseline command outputs: `e2e-before-3b.txt` and the final suite totals above. The only final skip is the pre-existing manual PDF layout check.

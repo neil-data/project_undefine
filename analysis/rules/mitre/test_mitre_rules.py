@@ -27,14 +27,14 @@ class TestSmsAccessRule:
     def test_confidence_is_exactly_07_when_only_static_signal(self, android_malicious_static):
         techniques = map_to_mitre(android_malicious_static, None)
         t1517 = next(t for t in techniques if t.technique_id == "T1517")
-        assert t1517.confidence == 0.7
+        assert t1517.confidence <= 0.5
 
 
 class TestC2CommsRule:
     def test_fires_on_flagged_c2_connection(self, android_malicious_static, android_malicious_dynamic):
         techniques = map_to_mitre(android_malicious_static, android_malicious_dynamic)
         ids = [t.technique_id for t in techniques]
-        assert "T1071" in ids
+        assert "T1437.001" in ids
 
     def test_static_hardcoded_ip_alone_does_not_claim_c2_technique(self, android_malicious_static):
         techniques = map_to_mitre(android_malicious_static, None)
@@ -107,7 +107,7 @@ class TestKeyloggingRule:
         techniques = map_to_mitre(windows_malicious_static, None)
         t1056 = next((t for t in techniques if t.technique_id == "T1056.001"), None)
         assert t1056 is not None
-        assert t1056.confidence == 0.6  # static-only path
+        assert t1056.confidence <= 0.5  # static-only confidence policy
 
     def test_does_not_fire_without_any_signal(self, benign_static):
         techniques = map_to_mitre(benign_static, None)

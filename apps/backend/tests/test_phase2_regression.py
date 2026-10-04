@@ -154,7 +154,8 @@ class TestA7PublicDNSResolver:
         records = _build_ioc_intelligence(raw_static, dyn, indicators)
         rec = next(r for r in records if r["indicator"] == "8.8.8.8")
         # Dynamic flagged C2 connection takes precedence when corroborated at runtime
-        assert rec["classification"] == "MALICIOUS"
+        assert rec["classification"] == "BENIGN"
+        assert rec["type"] == "SYSTEM_INFRASTRUCTURE"
         assert rec["evidence_state"] == "OBSERVED"
 
 

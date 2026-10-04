@@ -22,7 +22,9 @@ from tests.e2e.conftest import (
     is_valid_domain,
 )
 
-FIXTURE_ITEMS = get_fixture_items()
+# Product-output contracts run only against the clean control. Frozen bad reports
+# are exercised separately by test_detectors.py as detector regressions.
+FIXTURE_ITEMS = [item for item in get_fixture_items() if item[0] == "clean_control"]
 FIXTURE_IDS = [item[0] for item in FIXTURE_ITEMS]
 
 pytestmark = pytest.mark.e2e

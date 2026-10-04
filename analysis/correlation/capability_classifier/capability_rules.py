@@ -13,6 +13,10 @@ from typing import Optional
 from agents.orchestrator.schema import StaticAnalysisOutput, DynamicAnalysisOutput, CapabilityTag
 
 
+def _field(value, name: str, default=None):
+    return value.get(name, default) if isinstance(value, dict) else getattr(value, name, default)
+
+
 def _cap_sms_otp_theft(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[CapabilityTag]:
     perms = static.android_manifest.permissions if static.android_manifest else []
     evidence = []
@@ -21,7 +25,7 @@ def _cap_sms_otp_theft(static: StaticAnalysisOutput, dynamic: Optional[DynamicAn
     if any("READ_SMS" in p for p in perms):
         evidence.append("READ_SMS permission declared")
         score += 0.4
-    if any(y.category == "india_scam_rules" for y in static.yara_matches):
+    if any(_field(y, "category", "") == "india_scam_rules" for y in static.yara_matches):
         evidence.append("matches India-specific scam YARA rule")
         score += 0.3
     if dynamic and any("sms" in c.lower() for c in dynamic.api_calls):
@@ -181,6 +185,7 @@ def _cap_launchd_persistence(static: StaticAnalysisOutput, dynamic: Optional[Dyn
             capability="persistence_launchd",
             confidence=0.85,
             evidence=["installs a LaunchAgent/LaunchDaemon — survives reboot on macOS"],
+            evidence_state="OBSERVED", source_type="DYNAMIC", source="sandbox_persistence", state="OBSERVED",
         )
     return None
 
@@ -197,7 +202,7 @@ def _cap_privilege_escalation(static: StaticAnalysisOutput, dynamic: Optional[Dy
             evidence.append("setuid/setgid import found in binary")
         if dynamic_hit:
             evidence.append("observed setuid/setgid call during detonation — privilege escalation")
-        return CapabilityTag(capability="privilege_escalation", confidence=confidence, evidence=evidence)
+        return CapabilityTag(capability="privilege_escalation", confidence=confidence, evidence=evidence, evidence_state="OBSERVED" if dynamic_hit else "STATIC", source_type="DYNAMIC" if dynamic_hit else "STATIC", state="OBSERVED" if dynamic_hit else "STATIC")
     return None
 
 
@@ -226,6 +231,7 @@ def _cap_library_hijack(static: StaticAnalysisOutput, dynamic: Optional[DynamicA
             capability="library_hijacking",
             confidence=confidence,
             evidence=["uses LD_PRELOAD to hijack library loading — stealth/persistence technique"],
+            evidence_state="OBSERVED" if dynamic_hit else "STATIC", source_type="DYNAMIC" if dynamic_hit else "STATIC", state="OBSERVED" if dynamic_hit else "STATIC",
         )
     return None
 
@@ -370,8 +376,8 @@ def _cap_network_communication(static: StaticAnalysisOutput, dynamic: Optional[D
     dyn_conns = dynamic and (len(dynamic.network_connections) > 0 or len(dynamic.dns_queries) > 0)
     stat_urls = bool(static.extracted_strings.urls or static.extracted_strings.ips)
     static_network_rule = any(
-        "network" in str(getattr(match, "rule_name", "")).lower()
-        or "c2" in str(getattr(match, "rule_name", "")).lower()
+        "network" in str(_field(match, "rule_name", "")).lower()
+        or "c2" in str(_field(match, "rule_name", "")).lower()
         for match in static.yara_matches
     )
     if dyn_conns:

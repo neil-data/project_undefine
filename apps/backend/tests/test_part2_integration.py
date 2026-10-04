@@ -161,9 +161,9 @@ class TestExtractNetworkIndicators:
 class TestBuildThreatAssessment:
     """_build_threat_assessment must derive all values from evidence — no random output."""
 
-    def _build(self, risk_score, yara_matches, mitre_techniques, capability_tags, has_dynamic):
+    def _build(self, risk_score, yara_matches, mitre_techniques, capability_tags, has_dynamic, malware_bazaar=None):
         from backend.app.analysis import _build_threat_assessment
-        return _build_threat_assessment(risk_score, yara_matches, mitre_techniques, capability_tags, has_dynamic)
+        return _build_threat_assessment(risk_score, yara_matches, mitre_techniques, capability_tags, has_dynamic, malware_bazaar)
 
     def test_returns_all_keys(self):
         result = self._build(0, [], [], [], False)
@@ -179,7 +179,7 @@ class TestBuildThreatAssessment:
         assert result["threat_level"] == "LOW"
 
     def test_high_score_gives_malicious(self):
-        result = self._build(75, [], [], [], False)
+        result = self._build(85, [], [], [], False, {"found": True, "signature": "Mirai"})
         assert result["verdict"] == "MALICIOUS"
         assert result["threat_level"] == "CRITICAL"
 

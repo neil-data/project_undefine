@@ -24,6 +24,7 @@ LEGITIMATE_BENIGN_DOMAINS = {
     "microsoft.com",
     "developer.microsoft.com",
     "android.googlesource.com",
+    "schemas.android.com",
     "google.com",
     "github.com",
     "ocsp.apple.com",
@@ -53,8 +54,8 @@ SYSTEMD_SUFFIXES = {
 COMMON_FILE_EXTENSIONS = {
     "html", "htm", "php", "js", "css", "txt", "conf", "cfg",
     "sh", "py", "so", "a", "o", "bin", "dat", "log", "xml",
-    "json", "png", "jpg", "jpeg", "gif", "ico", "dex", "exe",
-    "dll", "elf", "tar", "gz", "zip",
+    "json", "png", "jpg", "jpeg", "gif", "ico", "dex", "dexpk", "exe",
+    "dll", "elf", "tar", "gz", "zip", "out", "p",
 }
 
 # 2026-10-04: Go standard library / runtime package prefixes

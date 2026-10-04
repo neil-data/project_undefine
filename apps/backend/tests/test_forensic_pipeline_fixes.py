@@ -59,7 +59,7 @@ def test_recommendations_synthesis_high_risk():
     recs = _generate_recommendations(
         verdict="MALICIOUS",
         risk_score=85,
-        capabilities=[{"capability": "persistence_registry"}, {"capability": "credential_dumping"}],
+        capabilities=[{"capability": "persistence_registry"}, {"capability": "credential_dumping", "evidence_state": "OBSERVED"}],
         mitre=[{"technique_id": "T1059", "technique_name": "Command and Scripting Interpreter"}],
         network_indicators={"ips": ["45.13.223.9"], "domains": ["c2.evil.com"], "urls": ["http://c2.evil.com/beacon"]},
         dynamic_output={

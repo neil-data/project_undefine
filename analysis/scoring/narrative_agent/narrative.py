@@ -372,6 +372,13 @@ def _render_narrative(summary: str, steps: list[dict]) -> str:
     if not steps:
         return clean_summary
 
+
+def _is_grounded(text: str, static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> bool:
+    """Compatibility wrapper for callers that validate a plain narrative sentence."""
+    candidate = json.dumps({"executive_summary": text, "technical_steps": []})
+    valid, _, _ = _validate_narrative(candidate, static, dynamic, [], [], 0)
+    return valid
+
     lines = [clean_summary, "", "Technical Execution Steps:"]
     for s in steps:
         st = html.escape(str(s.get("step", ""))).replace("|", "").strip()
@@ -431,10 +438,7 @@ def generate_narrative(
             has_dynamic_findings = True
 
     if not has_dynamic_findings:
-        mb_sig = (malware_bazaar or {}).get("signature")
-        if mb_sig and (malware_bazaar or {}).get("found"):
-            return f"Specific behavior could not be determined from the available evidence; classification rests on threat-intelligence matches ({mb_sig}) and static rule hits."
-        return "Specific behavior could not be determined from the available evidence; classification rests on static rule hits as no external threat-intelligence match was found."
+        return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact)
 
     try:
         from groq import Groq

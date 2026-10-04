@@ -1,0 +1,69 @@
+diff --git a/tests/e2e/inputs/day3b_cases.json b/tests/e2e/inputs/day3b_cases.json
+index b480947..f98d757 100644
+--- a/tests/e2e/inputs/day3b_cases.json
++++ b/tests/e2e/inputs/day3b_cases.json
+@@ -95,7 +95,7 @@
+       "Isolate host",
+       "isolate host"
+     ],
+-    "ips": [
++      "ips": [
+       "203.0.113.1",
+       "203.0.113.2",
+       "203.0.113.3",
+diff --git a/tests/e2e/test_day3b_pipeline.py b/tests/e2e/test_day3b_pipeline.py
+index 0a426ed..ed81959 100644
+--- a/tests/e2e/test_day3b_pipeline.py
++++ b/tests/e2e/test_day3b_pipeline.py
+@@ -79,7 +79,7 @@ def test_recommendations_raw_case_limits_dedupes_and_scopes_static_paths():
+     raw = RAW["recommendations"]
+     recs = _generate_recommendations(
+         verdict=raw["verdict"], risk_score=raw["risk_score"], capabilities=[], mitre=[],
+-        network_indicators={"connections": [{"ip": ip, "flagged_c2": True} for ip in raw["ips"]], "domains": raw["domains"]},
++        network_indicators={"connections": [{"ip": ip, "flagged_c2": True, "evidence_state": "OBSERVED"} for ip in raw["ips"]], "domains": raw["domains"]},
+         existing_recommendations=raw["existing_recommendations"], platform=raw["platform"],
+         static_persistence_paths=raw["static_paths"],
+     )
+diff --git a/tests/e2e/test_detectors.py b/tests/e2e/test_detectors.py
+index 9a9492b..e0f0839 100644
+--- a/tests/e2e/test_detectors.py
++++ b/tests/e2e/test_detectors.py
+@@ -22,8 +22,13 @@ EXPECTED_VIOLATIONS = {
+     "random_fragment_domains": "invalid_fragment_domain",
+     "static_cap_exceeded": "static_score_cap_exceeded",
+     "static_rule_labeled_intel": "static_rule_claimed_as_intel",
+-    "synthetic_mirai_droppee": "static_hit_claimed_as_c2_communication",
++    "synthetic_mirai_droppee": ["ambiguous_duplicate_timestamp", "static_hit_claimed_as_c2_communication", "static_score_cap_exceeded"],
+ }
++EXPECTED_DETECTIONS = [
++    (fixture, violation)
++    for fixture, violations in EXPECTED_VIOLATIONS.items()
++    for violation in (violations if isinstance(violations, list) else [violations])
++]
+ 
+ 
+ def validate_report(report: dict) -> set[str]:
+@@ -64,7 +69,7 @@ def validate_report(report: dict) -> set[str]:
+     return found
+ 
+ 
+-@pytest.mark.parametrize("fixture,violation_id", EXPECTED_VIOLATIONS.items())
++@pytest.mark.parametrize("fixture,violation_id", EXPECTED_DETECTIONS)
+ def test_original_bad_fixture_trips_expected_validator(fixture: str, violation_id: str) -> None:
+     report = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
+     assert violation_id in validate_report(report), f"{fixture}: expected detector {violation_id} did not fire"
+diff --git a/tests/e2e/test_e2e_baseline.py b/tests/e2e/test_e2e_baseline.py
+index 15a3c10..70c103f 100644
+--- a/tests/e2e/test_e2e_baseline.py
++++ b/tests/e2e/test_e2e_baseline.py
+@@ -22,7 +22,9 @@ from tests.e2e.conftest import (
+     is_valid_domain,
+ )
+ 
+-FIXTURE_ITEMS = get_fixture_items()
++# Product-output contracts run only against the clean control. Frozen bad reports
++# are exercised separately by test_detectors.py as detector regressions.
++FIXTURE_ITEMS = [item for item in get_fixture_items() if item[0] == "clean_control"]
+ FIXTURE_IDS = [item[0] for item in FIXTURE_ITEMS]
+ 
+ pytestmark = pytest.mark.e2e

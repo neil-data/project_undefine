@@ -630,7 +630,9 @@ def _build_evidence_correlations(raw_static: dict, dynamic_output: Optional[dict
             "dynamic_evidence": "Not available (dynamic analysis not performed)" if not has_dyn_completed else "Not available (static rule)",
             "correlation": "STATIC RULE EVIDENCE",
             "confidence": "HIGH" if match.get("severity") in ("high", "critical") else "MEDIUM",
-            "evidence_state": "STATIC",
+            "evidence_state": "INTEL" if str(match.get("rule_name", "")).startswith("[MalwareBazaar]") else "STATIC",
+            "source_type": "INTEL" if str(match.get("rule_name", "")).startswith("[MalwareBazaar]") else "STATIC",
+            "source": "MalwareBazaar API" if str(match.get("rule_name", "")).startswith("[MalwareBazaar]") else "Local YARA scan",
             "severity": str(match.get("severity") or "medium").upper(),
         })
 
@@ -986,6 +988,8 @@ def _build_threat_assessment(
         computed_conf = max(50, round(95 * agreeing / len(counted)))
         if len(counted) < 3:
             computed_conf = min(computed_conf, 70)
+        if agreeing < len(counted):
+            key_findings.append(f"Vendor disagreement observed ({agreeing}/{len(counted)} agree).")
         key_findings.append(f"Vendor consensus: ({agreeing}/{len(counted)}) vendors agree.")
     elif not has_intel_floor:
         computed_conf = 50
@@ -1126,8 +1130,14 @@ def _generate_recommendations(
     c2_ips = [
         c.get("ip") or c.get("dest_ip")
         for c in (network_indicators.get("connections") or [])
-        if c.get("flagged_c2") and (c.get("ip") or c.get("dest_ip")) not in _PUBLIC_DNS_RESOLVERS
+        if c.get("flagged_c2")
+        and str(c.get("evidence_state") or "").upper() in {"OBSERVED", "INTEL"}
+        and (c.get("ip") or c.get("dest_ip")) not in _PUBLIC_DNS_RESOLVERS
     ]
+    for endpoint in (dynamic_output or {}).get("c2_endpoints_detected") or []:
+        endpoint_ip = str(endpoint).rsplit(":", 1)[0]
+        if endpoint_ip not in _PUBLIC_DNS_RESOLVERS and _is_valid_ipv4(endpoint_ip):
+            c2_ips.append(endpoint_ip)
     c2_domains = network_indicators.get("domains") or []
 
     # 2. Urgent Containment & Host Isolation based on Verdict & Risk Score
@@ -1152,7 +1162,10 @@ def _generate_recommendations(
         unique_ips = list(dict.fromkeys(str(ip) for ip in c2_ips))
         shown = unique_ips[:15]
         suffix = f"; and {len(unique_ips) - 15} more (see IoC table)" if len(unique_ips) > 15 else ""
-        add_rec(f"Block outbound traffic to confirmed C2 IPs {', '.join(shown)}{suffix}.")
+        for ip in shown:
+            add_rec(f"Firewall rule: iptables -A OUTPUT -d {ip} -j DROP")
+        if suffix:
+            add_rec(f"Firewall rule list truncated after 15 IPs{suffix}.")
     if c2_domains:
         suspicious_doms = [
             d for d in c2_domains
@@ -1177,9 +1190,10 @@ def _generate_recommendations(
     # 5. Persistence Removals
     persistence_artifacts = (dynamic_output or {}).get("persistence_artifacts") or []
     if persistence_artifacts:
-        add_rec(f"Remove persistence artifacts identified during analysis: {'; '.join(str(p) for p in persistence_artifacts[:3])}.")
+        if str((dynamic_output or {}).get("execution_mode", "real")).lower() == "real" and (dynamic_output or {}).get("dynamic_status", "completed") == "completed":
+            add_rec(f"Remove persistence artifacts identified during analysis: {'; '.join(str(p) for p in persistence_artifacts[:3])}.")
     elif static_persistence_paths:
-        add_rec(f"Check hosts for these paths: {'; '.join(str(p) for p in static_persistence_paths[:3])}.")
+        add_rec(f"Check hosts for these paths (static persistence indicators): {'; '.join(str(p) for p in static_persistence_paths[:3])}.")
     else:
         registry_changes = (dynamic_output or {}).get("registry_changes") or []
         if registry_changes:

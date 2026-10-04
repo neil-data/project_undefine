@@ -3,7 +3,7 @@ from __future__ import annotations
 
 CLEAN_LABELS = {
     "clean", "clean1", "legit file", "no threats detected", "not malicious",
-    "benign", "safe", "whitelist", "whitelisted", "false positive", "non-malicious",
+    "benign", "safe", "whitelist", "whitelisted", "false positive", "non-malicious", "legitimate",
 }
 UNRATED_LABELS = {"not_supported", "not supported", "unknown", "none", "null", "notcategorized", "unrated", ""}
 MALICIOUS_LABELS = {"malware2", "mirai", "amos", "known", "suspicious"}
