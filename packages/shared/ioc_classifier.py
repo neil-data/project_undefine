@@ -135,7 +135,7 @@ def is_valid_ip(val: str) -> bool:
         return False
 
 
-def validate_domain(domain: str) -> Tuple[bool, str]:
+def validate_domain(domain: str, *, allow_short_sld: bool = False) -> Tuple[bool, str]:
     """
     Validates domain requirements per B3:
     - SLD length >= 3 chars
@@ -209,10 +209,10 @@ def validate_domain(domain: str) -> Tuple[bool, str]:
                 return False, f"Domain '{domain}' does not have a valid private suffix under PSL"
             priv_parts = priv.split(".")
             sld_label = priv_parts[0]
-            if len(sld_label) < 3:
+            if len(sld_label) < 3 and not allow_short_sld:
                 return False, f"SLD '{sld_label}' is shorter than 3 characters in domain {domain}"
         except Exception:
-            if len(sld) < 3:
+            if len(sld) < 3 and not allow_short_sld:
                 return False, f"SLD '{sld}' is shorter than 3 characters in domain {domain}"
     else:
         if len(sld) < 3:
@@ -478,7 +478,9 @@ class IoCClassifier:
             )
 
         # 10. Domains
-        valid_dom, reason = validate_domain(ind)
+        # Observed DNS names may use short labels (for example x.com). Keep
+        # the stricter three-character rule for uncontextualized strings.
+        valid_dom, reason = validate_domain(ind, allow_short_sld=is_dynamic_observed)
         if valid_dom:
             has_ti = bool(threat_intel and threat_intel.get("malicious"))
             return ClassifiedIoC(

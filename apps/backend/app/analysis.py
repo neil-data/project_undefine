@@ -266,8 +266,8 @@ _REJECTED_TLDS = {
 }
 
 
-def _is_valid_domain(val: str) -> bool:
-    valid, _ = _validate_domain_ioc(val)
+def _is_valid_domain(val: str, *, contextual: bool = False) -> bool:
+    valid, _ = _validate_domain_ioc(val, allow_short_sld=contextual)
     return valid
 
 
@@ -284,7 +284,7 @@ def _is_valid_url(url: str) -> bool:
         if parts.scheme.lower() not in ("http", "https", "ftp", "ftps"):
             return False
         host = parts.hostname or ""
-        if not host or not _is_valid_domain(host) and not _is_valid_ipv4(host):
+        if not host or not _is_valid_domain(host, contextual=True) and not _is_valid_ipv4(host):
             return False
         return True
     except Exception:
@@ -364,7 +364,7 @@ def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict 
                     "flagged_c2": bool(conn.get("flagged_c2")),
                 })
             domain = conn.get("domain") or conn.get("hostname")
-            if domain and _is_valid_domain(str(domain)) and str(domain) not in dynamic_domains:
+            if domain and _is_valid_domain(str(domain), contextual=True) and str(domain) not in dynamic_domains:
                 dynamic_domains.append(str(domain))
 
         for ep in dyn_dict.get("c2_endpoints_detected", []):
@@ -372,13 +372,13 @@ def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict 
             if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host):
                 if _is_valid_ipv4(host) and host not in dynamic_ips:
                     dynamic_ips.append(host)
-            elif _is_valid_domain(host):
+            elif _is_valid_domain(host, contextual=True):
                 if host not in dynamic_domains:
                     dynamic_domains.append(host)
 
         for q in dyn_dict.get("dns_queries", []):
             q_str = str(q)
-            if _is_valid_domain(q_str):
+            if _is_valid_domain(q_str, contextual=True):
                 if q_str not in dns_queries:
                     dns_queries.append(q_str)
                 if q_str not in dynamic_domains:

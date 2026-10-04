@@ -22,7 +22,12 @@
   "yara_matches": [],
   "network_indicators": {
     "ips": [],
-    "domains": [],
+    "domains": [
+      "fmt.pp",
+      "go.shape",
+      "io.pipe",
+      "os.file"
+    ],
     "urls": [],
     "dns_queries": [],
     "connections": []
@@ -39,19 +44,19 @@
   ],
   "ioc_intelligence": [
     {
-      "type": "SYMBOL",
+      "type": "DOMAIN",
       "indicator": "fmt.pp"
     },
     {
-      "type": "SYMBOL",
+      "type": "DOMAIN",
       "indicator": "go.shape"
     },
     {
-      "type": "SYMBOL",
+      "type": "DOMAIN",
       "indicator": "io.pipe"
     },
     {
-      "type": "SYMBOL",
+      "type": "DOMAIN",
       "indicator": "os.file"
     }
   ],

@@ -132,3 +132,26 @@ All notable changes to the E-Rakshak malware analysis and triage pipeline are do
   - `sandbox-host/app/main.py`: `/jobs/{job_id}` returns the actual recorded lifecycle status from `meta.json`.
 - **Status Propagation in Backend**:
   - `backend/app/sandbox.py`: Polling loop and handlers propagate `"timed_out"`, `"failed"`, and `"incomplete"` states, preventing timed-out or crashed executions from being falsely reported as successful completed analyses.
+## E2E fixture integrity
+- Restored bug fixtures from 677d17c for detector and pipeline regression coverage; retained the synthetic provenance marker on synthetic_mirai_droppee.json. Updated tests/e2e/fixtures/MANIFEST.sha256 to pin the restored fixture bytes.
+
+- Restored fixture `base64_and_system_libs_as_paths.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `benign_hosts_suspicious.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `fabricated_narrative.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `go_symbols_as_domains.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `llm_refusal.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `random_fragment_domains.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `static_rule_labeled_intel.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `synthetic_mirai_droppee.json` from 677d17c to preserve the original detector regression case; its SHA-256 is recorded in the fixture manifest.
+- Restored fixture `clean_control.json` from 677d17c to preserve the original clean control sample; it remains the clean reference.
+
+- Restored fixture `credential_advice_no_evidence.json` from 677d17c to preserve the original regression sample; the SHA-256 is recorded in the fixture manifest.
+- Restored fixture `critical_all_vendors_clean.json` from 677d17c to preserve the original regression sample; the SHA-256 is recorded in the fixture manifest.
+- Restored fixture `duplicate_timestamps_synthetic_offset.json` from 677d17c to preserve the original regression sample; the SHA-256 is recorded in the fixture manifest.
+- Restored fixture `static_cap_exceeded.json` from 677d17c to preserve the original regression sample; the SHA-256 is recorded in the fixture manifest.
+
+## Day 2b — detector and pipeline regression coverage
+- Added layer-1 expected-violation coverage for all 12 frozen bug fixtures and clean-control zero-violation coverage.
+- Added raw pipeline inputs, report-builder IOC validation, mocked narrative entrypoint checks, and static-YARA C2 provenance coverage.
+- Static YARA/network hits now report STATIC network communication; static evidence cannot create c2_communication.
+- Contextually accept valid short-SLD domain names from URLs and observed DNS queries while retaining the three-character rule for bare domains.

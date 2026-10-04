@@ -315,27 +315,8 @@ def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[Dynami
             state="OBSERVED",
         )
 
-    # Static rule / YARA matches are STATIC, NEVER INTEL. Vendor tags alone never confirm C2.
-    static_c2 = any(
-        "c2" in getattr(ym, "rule_name", "").lower() or "botnet" in getattr(ym, "rule_name", "").lower() or getattr(ym, "category", "") == "threat_intel"
-        for ym in getattr(static, "yara_matches", [])
-    )
-    static_strings = getattr(static, "extracted_strings", None)
-    has_static_c2_str = False
-    if static_strings and getattr(static_strings, "suspicious_keywords", None):
-        has_static_c2_str = any("c2" in s.lower() or "botnet" in s.lower() for s in static_strings.suspicious_keywords)
-
-    if static_c2 or has_static_c2_str:
-        return CapabilityTag(
-            capability="c2_communication",
-            confidence=0.65,
-            confidence_level="medium",
-            evidence=["static rule or indicator references potential command-and-control"],
-            evidence_state="STATIC",
-            source_type="STATIC",
-            source="yara" if static_c2 else "strings",
-            state="STATIC",
-        )
+    # Static strings and YARA hits can identify network indicators, not prove
+    # communication or command-and-control behavior.
     return None
 
 
@@ -382,6 +363,11 @@ def _cap_network_communication(static: StaticAnalysisOutput, dynamic: Optional[D
     """Outbound network communication capability."""
     dyn_conns = dynamic and (len(dynamic.network_connections) > 0 or len(dynamic.dns_queries) > 0)
     stat_urls = bool(static.extracted_strings.urls or static.extracted_strings.ips)
+    static_network_rule = any(
+        "network" in str(getattr(match, "rule_name", "")).lower()
+        or "c2" in str(getattr(match, "rule_name", "")).lower()
+        for match in static.yara_matches
+    )
     if dyn_conns:
         return CapabilityTag(
             capability="network_communication",
@@ -389,11 +375,11 @@ def _cap_network_communication(static: StaticAnalysisOutput, dynamic: Optional[D
             evidence=["observed active network connections or DNS lookups during detonation"],
             evidence_state="OBSERVED",
         )
-    if stat_urls:
+    if stat_urls or static_network_rule:
         return CapabilityTag(
             capability="network_communication",
             confidence=0.65,
-            evidence=["hardcoded network endpoint(s) found in binary strings"],
+            evidence=["static YARA network indicator" if static_network_rule and not stat_urls else "hardcoded network endpoint(s) found in binary strings"],
             evidence_state="STATIC",
         )
     return None

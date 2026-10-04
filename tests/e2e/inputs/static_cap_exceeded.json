@@ -1,0 +1,11 @@
+{
+  "raw": {
+    "capability_inputs": [
+      {
+        "capability": "evasion",
+        "evidence_state": "STATIC"
+      }
+    ],
+    "risk_score": 35
+  }
+}

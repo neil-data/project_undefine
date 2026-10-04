@@ -18,6 +18,7 @@ from analysis.scoring.orchestrator.schema import (
 )
 from analysis.correlation.capability_classifier.capability_rules import (
     _cap_c2_communication,
+    _cap_network_communication,
     classify_capabilities,
 )
 
@@ -96,7 +97,7 @@ class TestEvidenceModelInvariants:
 
 
 class TestCapabilitySourceSeparation:
-    def test_c2_communication_from_static_yara_is_strictly_static(self):
+    def test_static_yara_network_hit_is_not_c2_communication(self):
         static_out = StaticAnalysisOutput(
             sample_id="test_c2_static",
             submitted_at="2026-10-04T00:00:00Z",
@@ -115,14 +116,11 @@ class TestCapabilitySourceSeparation:
                 )
             ],
         )
-        res = _cap_c2_communication(static_out, None)
+        assert _cap_c2_communication(static_out, None) is None
+        res = _cap_network_communication(static_out, None)
         assert res is not None
-        assert res.capability == "c2_communication"
+        assert res.capability == "network_communication"
         assert res.evidence_state == "STATIC"
-        assert res.source_type == "STATIC"
-        assert res.confidence == 0.65
-        assert res.confidence_level == "medium"
-        assert "yara" in res.source.lower()
 
     def test_c2_communication_observed_when_flagged_in_dynamic(self):
         static_out = StaticAnalysisOutput(

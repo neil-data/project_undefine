@@ -1,0 +1,11 @@
+{
+  "raw": {
+    "yara_hits": [
+      {
+        "rule_name": "builtin.network_indicators",
+        "category": "threat_intel",
+        "description": "Hardcoded C2 pattern"
+      }
+    ]
+  }
+}

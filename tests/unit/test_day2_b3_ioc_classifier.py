@@ -40,6 +40,14 @@ class TestDomainValidation:
         assert not valid
         assert "SLD" in reason
 
+    def test_short_domains_allowed_only_with_observed_dns_or_url_context(self):
+        assert not validate_domain("t.co")[0]
+        assert not validate_domain("x.com")[0]
+        assert IoCClassifier.classify("t.co", hint_type="DOMAIN", is_dynamic_observed=True).type == "DOMAIN"
+        assert IoCClassifier.classify("x.com", hint_type="DOMAIN", is_dynamic_observed=True).type == "DOMAIN"
+        assert IoCClassifier.classify("https://t.co/a", hint_type="URL").type == "URL"
+        assert IoCClassifier.classify("https://x.com/a", hint_type="URL").type == "URL"
+
         valid, reason = validate_domain("XB.kr")
         assert not valid
         assert "SLD" in reason

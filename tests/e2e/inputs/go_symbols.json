@@ -1,0 +1,10 @@
+{
+  "raw": {
+    "strings": [
+      "fmt.pp",
+      "go.shape",
+      "io.pipe",
+      "os.file"
+    ]
+  }
+}

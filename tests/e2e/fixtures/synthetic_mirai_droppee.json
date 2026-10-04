@@ -1,4 +1,5 @@
 {
+  "synthetic": true,
   "sample_id": "87ace603b502bb8f30125c26922000d10576e5fd42fd1e4937e78a0b7e522d28",
   "platform": "linux",
   "file_type": "elf",
@@ -38,7 +39,7 @@
       "evidence_state": "STATIC"
     }
   ],
-  "narrative_summary": "The malware steals personal data such as login credentials and financial information from the infected computer and sends it to a remote server located abroad. It also contacts a command server to receive further instructions, allowing the attacker to control the infection. This creates a high\u2011impact risk of identity theft and financial loss for victims. All stolen data is transmitted to a hard\u2011coded IP address outside the country. Investigators should examine network traffic for connections to that IP and look for the related binary on affected machines.\n\n\nTechnical Execution Steps:\nStep 1: Search the binary for hardcoded network endpoint strings (Evidence: Static strings containing an IP address were found in the file)\nStep 2: Identify the command\u2011and\u2011control (C2) address used for communication (Evidence: A hardcoded C2 IP address appears in the static indicators)\nStep 3: Confirm network communication attempts to the identified endpoint (Evidence: Binary strings reference the same network endpoint, indicating outbound traffic).",
+  "narrative_summary": "The malware steals personal data such as login credentials and financial information from the infected computer and sends it to a remote server located abroad. It also contacts a command server to receive further instructions, allowing the attacker to control the infection. This creates a high\u2011impact risk of identity theft and financial loss for victims. All stolen data is transmitted to a hard\u2011coded IP address outside the country. Investigators should examine network traffic for connections to that IP and look for the related binary on affected machines.\n\n\nTechnical Execution Steps:\nStep 1: Search the binary for hardcoded network endpoint strings (Evidence: Static strings containing an IP address were found in the file)\nStep 2: Identify the command\u2011and\u2011control (C2) address used for communication (Evidence: A hardcoded C2 IP address appears in the static indicators)\nStep 3: Confirm network communication attempts to the identified endpoint (Evidence: Binary strings reference the same network endpoint, indicating outbound traffic)",
   "submitted_at": "2026-10-03T04:49:45.980983+00:00",
   "sha256": "87ace603b502bb8f30125c26922000d10576e5fd42fd1e4937e78a0b7e522d28",
   "md5": "1476f155b81ecc716c808212c7ac1e3f",

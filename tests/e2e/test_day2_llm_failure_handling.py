@@ -168,3 +168,39 @@ async def test_analyze_and_save_llm_failure_handling(
     # 4. Fallback status verification in ai_analysis
     ai_analysis = case_data.get("ai_analysis") or {}
     assert ai_analysis.get("fallback_used") is True or "[FALLBACK]" in narrative or "exhibits" in narrative
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["fabricated_narrative", "refusal"])
+async def test_raw_narrative_inputs_through_pipeline(monkeypatch, sample_payload_path: Path, case: str):
+    """Feed checked-in raw mocked replies through the real analysis entrypoint."""
+    raw_path = Path(__file__).parent / "inputs" / f"{case}.json"
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))["raw"]
+    monkeypatch.setenv("GROQ_API_KEY", "mock_groq_api_key_test")
+    mock_choice = MagicMock()
+    mock_choice.message.content = raw["llm_reply"]
+    mock_completion = MagicMock()
+    mock_completion.choices = [mock_choice]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_completion
+    with patch("groq.Groq", return_value=mock_client):
+        report = await analyze_and_save(sample_payload_path)
+    narrative = report.get("narrative_summary", "")
+    assert narrative and narrative.strip()[-1] in ".!?\"'"
+    assert "i'm sorry" not in narrative.lower() and "can't help" not in narrative.lower()
+    assert "CVE-2024-99999" not in narrative
+    assert "| Step" not in narrative and "<br>" not in narrative
+
+
+@pytest.mark.asyncio
+async def test_static_yara_input_never_becomes_c2_claim(monkeypatch, sample_payload_path: Path):
+    """Static rule evidence may describe network communication but cannot prove C2."""
+    import asyncio
+    payload = json.loads(sample_payload_path.read_text(encoding="utf-8"))
+    payload["dynamic_analysis"] = {"status": "unavailable", "dynamic_status": "unavailable", "network_connections": [], "process_tree": [], "files_written": [], "api_calls": []}
+    raw = json.loads((Path(__file__).parent / "inputs" / "static_rule_as_intel.json").read_text(encoding="utf-8"))["raw"]
+    payload["static_analysis"]["yara_matches"] = raw["yara_hits"]
+    sample_payload_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    report = await analyze_and_save(sample_payload_path)
+    assert not any(c.get("capability") == "c2_communication" and c.get("evidence_state") == "STATIC" for c in report.get("capability_tags", []))
