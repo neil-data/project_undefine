@@ -303,28 +303,38 @@ def _cap_c2_communication(static: StaticAnalysisOutput, dynamic: Optional[Dynami
         if has_c2_conn or has_c2_ep:
             evidence.append("communicates with confirmed command-and-control infrastructure")
 
-    # Threat intel confirmed C2 match
-    intel_c2 = any(
-        "c2" in ym.rule_name.lower() or "botnet" in ym.rule_name.lower() or ym.category == "threat_intel"
-        for ym in getattr(static, "yara_matches", [])
-        if "[MalwareBazaar]" in getattr(ym, "rule_name", "")
-    )
-    if intel_c2 and not evidence:
-        evidence.append("threat-intelligence confirmed command-and-control signature match")
-
     if (has_beacon or has_c2_conn) and evidence:
         return CapabilityTag(
             capability="c2_communication",
             confidence=0.9 if (has_c2_conn and has_beacon) else 0.8,
+            confidence_level="confirmed" if (has_c2_conn and has_beacon) else "high",
             evidence=evidence,
             evidence_state="OBSERVED",
+            source_type="DYNAMIC",
+            source="sandbox_network",
+            state="OBSERVED",
         )
-    elif intel_c2 and evidence:
+
+    # Static rule / YARA matches are STATIC, NEVER INTEL. Vendor tags alone never confirm C2.
+    static_c2 = any(
+        "c2" in getattr(ym, "rule_name", "").lower() or "botnet" in getattr(ym, "rule_name", "").lower() or getattr(ym, "category", "") == "threat_intel"
+        for ym in getattr(static, "yara_matches", [])
+    )
+    static_strings = getattr(static, "extracted_strings", None)
+    has_static_c2_str = False
+    if static_strings and getattr(static_strings, "suspicious_keywords", None):
+        has_static_c2_str = any("c2" in s.lower() or "botnet" in s.lower() for s in static_strings.suspicious_keywords)
+
+    if static_c2 or has_static_c2_str:
         return CapabilityTag(
             capability="c2_communication",
-            confidence=0.85,
-            evidence=evidence,
-            evidence_state="INTEL",
+            confidence=0.65,
+            confidence_level="medium",
+            evidence=["static rule or indicator references potential command-and-control"],
+            evidence_state="STATIC",
+            source_type="STATIC",
+            source="yara" if static_c2 else "strings",
+            state="STATIC",
         )
     return None
 

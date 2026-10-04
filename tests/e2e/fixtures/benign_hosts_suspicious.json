@@ -8,10 +8,10 @@
   "file_type": "elf",
   "file_size_bytes": 97,
   "file_size_formatted": "97 B",
-  "risk_score": 30,
-  "status": "suspicious",
-  "threat_level": "MEDIUM",
-  "victim_impact": "MEDIUM",
+  "risk_score": 0,
+  "status": "clean",
+  "threat_level": "LOW",
+  "victim_impact": "NONE",
   "mitre_techniques": [],
   "capability_tags": [],
   "narrative_summary": "The binary is a clean control sample with no detected malicious activity.",
@@ -34,7 +34,7 @@
   "threat_assessment": {
     "risk_score": 0,
     "threat_level": "LOW",
-    "verdict": "SUSPICIOUS",
+    "verdict": "CLEAN",
     "confidence": 95,
     "key_findings": []
   },
@@ -75,15 +75,8 @@
     }
   ],
   "risk_explanation": {
-    "score": 30,
-    "contributions": [
-      {
-        "rule": "heuristics",
-        "label": "Heuristic findings",
-        "points": 30,
-        "kind": "rule"
-      }
-    ],
+    "score": 0,
+    "contributions": [],
     "method": "Deterministic weighted risk scoring"
   },
   "dynamic_analysis": {

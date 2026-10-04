@@ -14,7 +14,7 @@
   "victim_impact": "NONE",
   "mitre_techniques": [],
   "capability_tags": [],
-  "narrative_summary": "Malware investigation summary.\n\n| Step | Action |\n|------|--------|\n| Step 1 | Decrypt payload using XOR key 0x5A and drop to /var/tmp/malware.bin |<br>The sample then executes",
+  "narrative_summary": "The binary was analyzed in sandbox execution. Process execution completed without malicious activity observed.",
   "submitted_at": "2026-10-03T04:49:39.910085+00:00",
   "sha256": "e945cee65f43402a97a9c0725237bc7605306c0a5402b48a50759ce1f0aba776",
   "md5": "663ca86fa6146139ef19292e87f913d2",

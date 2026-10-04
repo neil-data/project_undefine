@@ -11,8 +11,9 @@ be confirmed with Member 2 once the sandbox is live in Week 3.
 """
 
 from __future__ import annotations
-from typing import Optional, Literal, TypedDict
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, Literal, TypedDict, Any
+from enum import Enum
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class YaraMatch(BaseModel):
@@ -112,18 +113,79 @@ class DynamicAnalysisOutput(BaseModel):
 
 
 
+from enum import Enum
+
+
+class SourceType(str, Enum):
+    STATIC = "STATIC"
+    DYNAMIC = "DYNAMIC"
+    INTEL = "INTEL"
+
+
+class EvidenceState(str, Enum):
+    STATIC = "STATIC"
+    OBSERVED = "OBSERVED"
+    INTEL = "INTEL"
+    NOT_PERFORMED = "NOT_PERFORMED"
+
+
+class EvidenceFinding(BaseModel):
+    """Canonical Evidence Finding Model (Single Source of Truth - Day 2 B1)."""
+    source_type: Literal["STATIC", "DYNAMIC", "INTEL"]
+    source: str  # yara, parser, strings, mitre_rule, malwarebazaar, sandbox, network_trace
+    evidence_state: Literal["STATIC", "OBSERVED", "INFERRED", "UNVERIFIED", "CORROBORATED", "INTEL", "NOT_PERFORMED"] = "STATIC"
+    confidence: float
+    evidence: str = ""  # exact string/field
+    provenance: Optional[str] = None  # exact path, rule name, timestamp
+    description: Optional[str] = None
+    state: Optional[Literal["STATIC", "OBSERVED", "INFERRED", "UNVERIFIED", "CORROBORATED", "INTEL", "NOT_PERFORMED"]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_state_field(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            if "state" in values and "evidence_state" not in values:
+                values["evidence_state"] = values["state"]
+            elif "evidence_state" in values and "state" not in values:
+                values["state"] = values["evidence_state"]
+        return values
+
+    @model_validator(mode="after")
+    def validate_invariants(self) -> "EvidenceFinding":
+        if self.source_type == "STATIC" and self.evidence_state in ("OBSERVED", "DYNAMIC"):
+            raise ValueError("STATIC findings cannot have OBSERVED or DYNAMIC evidence_state")
+        if self.source_type == "STATIC" and self.evidence_state == "INTEL":
+            raise ValueError("Static rule match findings cannot claim INTEL")
+        if self.source.lower() == "yara":
+            if self.source_type != "STATIC":
+                raise ValueError("YARA matches are strictly STATIC source_type")
+            if self.evidence_state not in ("STATIC", "CORROBORATED", "UNVERIFIED"):
+                raise ValueError("YARA matches cannot claim INTEL or OBSERVED evidence_state")
+            if self.confidence > 0.80:
+                raise ValueError("YARA match confidence must be <= 0.80")
+        return self
+
+
 class MitreTechnique(BaseModel):
     technique_id: str        # e.g. "T1517"
     technique_name: str
     confidence: float
-    evidence_state: Optional[Literal["OBSERVED", "STATIC", "INTEL", "observed", "static", "intel"]] = "STATIC"
+    evidence_state: Optional[Literal["OBSERVED", "STATIC", "INTEL", "NOT_PERFORMED", "observed", "static", "intel"]] = "STATIC"
+    source_type: Optional[Literal["STATIC", "DYNAMIC", "INTEL"]] = "STATIC"
+    source: Optional[str] = "mitre_rule"
+    state: Optional[Literal["STATIC", "OBSERVED", "INTEL", "NOT_PERFORMED"]] = "STATIC"
+    evidence: Optional[list[str]] = Field(default_factory=list)
 
 
 class CapabilityTag(BaseModel):
     capability: str          # e.g. "sms_otp_theft", "keylogging", "gps_tracking"
     confidence: float
     evidence: list[str] = Field(default_factory=list)
-    evidence_state: Optional[Literal["OBSERVED", "STATIC", "INTEL", "observed", "static", "intel"]] = "STATIC"
+    evidence_state: Optional[Literal["OBSERVED", "STATIC", "INTEL", "NOT_PERFORMED", "observed", "static", "intel"]] = "STATIC"
+    source_type: Optional[Literal["STATIC", "DYNAMIC", "INTEL"]] = "STATIC"
+    source: Optional[str] = "capability_rules"
+    state: Optional[Literal["STATIC", "OBSERVED", "INTEL", "NOT_PERFORMED"]] = "STATIC"
+    confidence_level: Optional[str] = None
 
 
 class OrchestratorState(TypedDict, total=False):

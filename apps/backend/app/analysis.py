@@ -33,6 +33,21 @@ from .models.api_models import (
     confidence_from_signals,
 )
 from . import geoip, store, malware_bazaar, sandbox
+from packages.shared.ioc_classifier import (
+    IoCClassifier,
+    IOCType,
+    validate_domain as _validate_domain_ioc,
+    strip_glued_hex as _strip_glued_hex_ioc,
+    truncate_display_value,
+    is_base64_blob,
+    is_system_library,
+    is_symbol,
+    is_package_entry,
+)
+from packages.shared.allowlist import (
+    PUBLIC_DNS_RESOLVERS,
+    LEGITIMATE_BENIGN_DOMAINS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -139,6 +154,8 @@ def _is_persistence_path(path: str) -> bool:
     if not path or not isinstance(path, str):
         return False
     clean = path.strip()
+    if is_base64_blob(clean) or is_system_library(clean) or is_symbol(clean) or is_package_entry(clean):
+        return False
     return any(p.search(clean) is not None for p in _PERSISTENCE_PATH_PATTERNS)
 
 
@@ -250,58 +267,20 @@ _REJECTED_TLDS = {
 
 
 def _is_valid_domain(val: str) -> bool:
-    if not val or len(val) < 4 or len(val) > 253:
-        return False
-    if any(c in val for c in ('/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '\t', '\r', '\n')):
-        return False
-    if val.startswith("./") or val.startswith("../") or val.startswith("/"):
-        return False
-    if "." not in val:
-        return False
-
-    raw_parts = val.strip(".").split(".")
-    raw_tld = raw_parts[-1]
-    if any(c.isupper() for c in raw_tld) and any(c.islower() for c in raw_tld):
-        return False
-    if raw_tld.isupper() and len(raw_tld) <= 4:
-        return False
-
-    clean = val.lower().strip(".")
-    parts = clean.split(".")
-    tld = parts[-1]
-    if tld in _REJECTED_TLDS or f".{tld}" in _INVALID_DOMAIN_EXTENSIONS:
-        return False
-    if not re.match(r"^[a-z]{2,24}$", tld):
-        return False
-
-    second_level = parts[-2]
-    if len(second_level) < 2:
-        return False
-
-    for part in parts:
-        if not part or len(part) > 63:
-            return False
-        if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", part):
-            return False
-
-    if clean in ("localhost", "test.com", "a.out", "ldr", "classes.dexpk", "classes.dex", "rc.local"):
-        return False
-    if "dex" in clean and clean.endswith("pk"):
-        return False
-    if clean.endswith(".so") or (clean.startswith("lib") and ".so" in clean):
-        return False
-    return True
+    valid, _ = _validate_domain_ioc(val)
+    return valid
 
 
 def _is_valid_url(url: str) -> bool:
     if not url or len(url) < 10:
         return False
-    lowered = url.lower()
+    clean_url = _strip_glued_hex_ioc(url)
+    lowered = clean_url.lower()
     if any(lowered.startswith(bad) for bad in ("http/1.", "http/2", "httponly", "httpu", "http-equiv")):
         return False
     try:
         from urllib.parse import urlsplit
-        parts = urlsplit(url)
+        parts = urlsplit(clean_url)
         if parts.scheme.lower() not in ("http", "https", "ftp", "ftps"):
             return False
         host = parts.hostname or ""
@@ -425,7 +404,7 @@ def _is_benign_domain(value: str) -> bool:
 
 
 def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | DynamicAnalysisOutput], indicators: dict, malware_bazaar: Optional[dict] = None) -> list[dict]:
-    """Classify indicators from provenance; never mark a static string malicious by itself."""
+    """Classify indicators from provenance using canonical IoCClassifier; never mark a static string malicious by itself."""
     dyn_dict: Optional[dict] = None
     if dynamic_output is not None:
         if hasattr(dynamic_output, "model_dump"):
@@ -438,176 +417,115 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
     dynamic_domains = {str(q) for q in (dyn_dict or {}).get("dns_queries", [])}
     records: list[dict] = []
 
-    # 1. File Hash IoCs (always included as primary forensic anchors)
-    sha256 = raw_static.get("sha256") or (malware_bazaar.get("sha256") if malware_bazaar else None)
-    if sha256:
-        if malware_bazaar and malware_bazaar.get("found"):
-            records.append({
-                "indicator": sha256,
-                "type": "HASH_SHA256",
-                "source": "MalwareBazaar (abuse.ch)",
-                "classification": "MALICIOUS",
-                "confidence": "HIGH",
-                "first_seen": malware_bazaar.get("first_seen") or raw_static.get("submitted_at"),
-                "occurrence_count": 1,
-                "evidence_state": "INTEL",
-                "related_behavior": f"Known malware family: {malware_bazaar.get('signature') or 'Confirmed sample'}"
-            })
-        else:
-            is_mal = bool(raw_static.get("is_malware") or raw_static.get("risk_score", 0) > 50)
-            records.append({
-                "indicator": sha256,
-                "type": "HASH_SHA256",
-                "source": "Static Analysis",
-                "classification": "SUSPICIOUS" if is_mal else "UNKNOWN",
-                "confidence": "HIGH",
-                "first_seen": raw_static.get("submitted_at"),
-                "occurrence_count": 1,
-                "evidence_state": "STATIC",
-                "related_behavior": "Sample SHA-256 hash"
-            })
+    # 1. File Hash IoCs (anchored forensic indicators)
+    for htype in ("sha256", "md5", "sha1"):
+        hval = raw_static.get(htype) or (malware_bazaar.get(htype) if malware_bazaar and htype == "sha256" else None)
+        if hval:
+            classified = IoCClassifier.classify(
+                hval,
+                hint_type="HASH",
+                source="Static Analysis",
+                source_type="STATIC",
+                evidence_state="STATIC",
+                first_seen=raw_static.get("submitted_at"),
+                malware_bazaar=malware_bazaar if htype == "sha256" else None,
+            )
+            rec = classified.model_dump()
+            rec["type"] = f"HASH_{htype.upper()}"
+            records.append(rec)
 
-    md5 = raw_static.get("md5")
-    if md5:
-        records.append({
-            "indicator": md5,
-            "type": "HASH_MD5",
-            "source": "Static Analysis",
-            "classification": "SUSPICIOUS" if raw_static.get("is_malware") else "UNKNOWN",
-            "confidence": "HIGH",
-            "first_seen": raw_static.get("submitted_at"),
-            "occurrence_count": 1,
-            "evidence_state": "STATIC",
-            "related_behavior": "Sample MD5 hash"
-        })
-
-    sha1 = raw_static.get("sha1")
-    if sha1:
-        records.append({
-            "indicator": sha1,
-            "type": "HASH_SHA1",
-            "source": "Static Analysis",
-            "classification": "SUSPICIOUS" if raw_static.get("is_malware") else "UNKNOWN",
-            "confidence": "HIGH",
-            "first_seen": raw_static.get("submitted_at"),
-            "occurrence_count": 1,
-            "evidence_state": "STATIC",
-            "related_behavior": "Sample SHA-1 hash"
-        })
-
+    # 2. IP IoCs
     for ip in indicators.get("ips", []):
         connection = dynamic_connections.get(ip)
         flagged = bool(connection and connection.get("flagged_c2"))
         is_tor, tor_label = geoip.check_tor_status(ip)
-        is_public_dns = ip in _PUBLIC_DNS_RESOLVERS
+        classified = IoCClassifier.classify(
+            ip,
+            hint_type="IP",
+            source="Static + Dynamic" if ip in static_ips and connection else "Dynamic Network" if connection else "Static Analysis",
+            source_type="DYNAMIC" if connection else "STATIC",
+            evidence_state="OBSERVED" if connection else "STATIC",
+            first_seen=(connection.get("timestamp") if connection else None) or raw_static.get("submitted_at"),
+            is_dynamic_observed=bool(connection),
+            threat_intel={"malicious": True} if flagged else None,
+        )
+        rec = classified.model_dump()
+        if is_tor and rec["classification"] != "MALICIOUS" and rec["type"] != "SYSTEM_INFRASTRUCTURE":
+            rec["classification"] = "SUSPICIOUS"
+            rec["related_behavior"] = (rec.get("related_behavior") or "") + f" ({tor_label})"
+        records.append(rec)
 
-        source = "Static + Dynamic" if ip in static_ips and connection else "Dynamic Network" if connection else "Static Analysis"
-        evidence_state = "OBSERVED" if connection else "STATIC"
-
-        if is_public_dns and not flagged:
-            conf = "LOW"
-            related = "Public DNS resolver"
-            classification = "BENIGN"
-        else:
-            conf = "HIGH" if flagged or (connection and ip in static_ips) else "MEDIUM" if connection else "LOW"
-            related = ("Flagged C2 connection" if flagged else "Network connection observed" if connection else "Embedded endpoint") + (f" ({tor_label})" if is_tor else "")
-            classification = "MALICIOUS" if flagged else "SUSPICIOUS" if connection or is_tor else "UNKNOWN"
-
-        records.append({
-            "indicator": ip,
-            "type": "IP",
-            "source": source,
-            "classification": classification,
-            "confidence": conf,
-            "first_seen": (connection.get("timestamp") if connection else None) or raw_static.get("submitted_at"),
-            "occurrence_count": 1,
-            "evidence_state": evidence_state,
-            "related_behavior": related,
-        })
-
+    # 3. Domain IoCs
     for domain in indicators.get("domains", []):
         dynamic = domain in dynamic_domains
-        source = "Static + Dynamic" if dynamic else "Static Analysis"
-        evidence_state = "OBSERVED" if dynamic else "STATIC"
-        conf = "HIGH" if _is_benign_domain(domain) or dynamic else "LOW"
-        classification = "BENIGN" if _is_benign_domain(domain) else "SUSPICIOUS" if dynamic else "UNKNOWN"
-        related = "DNS query observed" if dynamic else "Embedded domain"
+        classified = IoCClassifier.classify(
+            domain,
+            hint_type="DOMAIN",
+            source="Static + Dynamic" if dynamic else "Static Analysis",
+            source_type="DYNAMIC" if dynamic else "STATIC",
+            evidence_state="OBSERVED" if dynamic else "STATIC",
+            first_seen=raw_static.get("submitted_at"),
+            is_dynamic_observed=bool(dynamic),
+        )
+        rec = classified.model_dump()
+        records.append(rec)
 
-        records.append({
-            "indicator": domain,
-            "type": "DOMAIN",
-            "source": source,
-            "classification": classification,
-            "confidence": conf,
-            "first_seen": raw_static.get("submitted_at"),
-            "occurrence_count": 1,
-            "evidence_state": evidence_state,
-            "related_behavior": related,
-        })
-
+    # 4. URL IoCs
     for url in indicators.get("urls", []):
-        has_proxy_port = any(f":{p}" in url for p in _NEUTRAL_PROXY_PORTS)
-        host_part = re.sub(r"^https?://", "", url).split("/")[0]
-        domain_part = host_part.split(":")[0]
+        clean_url = _strip_glued_hex_ioc(url)
+        classified = IoCClassifier.classify(
+            clean_url,
+            hint_type="URL",
+            source="Static Analysis",
+            source_type="STATIC",
+            evidence_state="STATIC",
+            first_seen=raw_static.get("submitted_at"),
+            is_dynamic_observed=False,
+        )
+        rec = classified.model_dump()
+        records.append(rec)
 
-        if has_proxy_port:
-            cls = "UNKNOWN"
-            rel = "Hardcoded endpoint"
-        elif _is_benign_domain(domain_part):
-            cls = "BENIGN"
-            rel = "Embedded URL"
-        else:
-            cls = "SUSPICIOUS"
-            rel = "Embedded URL"
-
-        records.append({
-            "indicator": url,
-            "type": "URL",
-            "source": "Static Analysis",
-            "classification": cls,
-            "confidence": "LOW",
-            "first_seen": raw_static.get("submitted_at"),
-            "occurrence_count": 1,
-            "evidence_state": "STATIC",
-            "related_behavior": rel,
-        })
-
-    # Add dropped files (files_written) as IoCs
+    # 5. Dropped Files IoCs
     if dyn_dict:
         for fw in dyn_dict.get("files_written", []):
             if fw:
-                records.append({
-                    "indicator": str(fw),
-                    "type": "DROPPED_FILE",
-                    "source": "Dynamic Sandbox",
-                    "classification": "SUSPICIOUS",
-                    "confidence": "MEDIUM",
-                    "first_seen": raw_static.get("submitted_at"),
-                    "occurrence_count": 1,
-                    "evidence_state": "OBSERVED",
-                    "related_behavior": "File written / dropped by sample",
-                })
+                classified = IoCClassifier.classify(
+                    str(fw),
+                    hint_type="FILE_PATH",
+                    source="Dynamic Sandbox",
+                    source_type="DYNAMIC",
+                    evidence_state="OBSERVED",
+                    first_seen=raw_static.get("submitted_at"),
+                    is_dynamic_observed=True,
+                )
+                rec = classified.model_dump()
+                rec["type"] = "DROPPED_FILE"
+                rec["related_behavior"] = "File written / dropped by sample"
+                records.append(rec)
 
-    # Add persistence paths as IoCs (from both static and dynamic discovery)
+    # 6. Persistence Paths IoCs
     persistence_details = _extract_persistence_artifacts(raw_static, dynamic_output)
     for p_art in persistence_details:
         p_path = p_art.get("path")
         p_state = p_art.get("evidence_state", "STATIC")
         p_source = p_art.get("source", "Persistence Detection")
         if p_path:
-            records.append({
-                "indicator": str(p_path),
-                "type": "PERSISTENCE_PATH",
-                "source": p_source,
-                "classification": "SUSPICIOUS",
-                "confidence": "HIGH" if p_state == "OBSERVED" else "MEDIUM",
-                "first_seen": raw_static.get("submitted_at"),
-                "occurrence_count": 1,
-                "evidence_state": p_state,
-                "related_behavior": "Persistence artifact identified",
-            })
+            classified = IoCClassifier.classify(
+                str(p_path),
+                hint_type="FILE_PATH",
+                source=p_source,
+                source_type=p_state,
+                evidence_state=p_state,
+                first_seen=raw_static.get("submitted_at"),
+                is_dynamic_observed=(p_state == "OBSERVED"),
+            )
+            rec = classified.model_dump()
+            if rec["type"] == "FILE_PATH":
+                rec["type"] = "PERSISTENCE_PATH"
+                rec["related_behavior"] = "Persistence artifact identified"
+            records.append(rec)
 
-    # Add dynamic process executions as IoCs
+    # 7. Dynamic Process Executions
     if dyn_dict:
         for proc in dyn_dict.get("process_tree", []):
             if isinstance(proc, dict):
@@ -621,13 +539,16 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
             if cmd:
                 records.append({
                     "indicator": str(cmd),
+                    "display_value": truncate_display_value(str(cmd)),
                     "type": "PROCESS",
                     "source": "Dynamic Sandbox",
+                    "source_type": "DYNAMIC",
+                    "evidence_state": "OBSERVED",
                     "classification": "SUSPICIOUS" if is_susp else "UNKNOWN",
                     "confidence": "HIGH",
                     "first_seen": raw_static.get("submitted_at"),
                     "occurrence_count": 1,
-                    "evidence_state": "OBSERVED",
+                    "intel_corroborated": False,
                     "related_behavior": f"Process execution observed (PID {pid})" if pid else "Process execution observed",
                 })
 
@@ -667,14 +588,13 @@ def _build_evidence_correlations(raw_static: dict, dynamic_output: Optional[dict
     has_dyn_completed = bool(dyn_dict and dyn_status in ("completed", "no_behavior_observed"))
 
     for match in raw_static.get("yara_matches", []):
-        is_intel = (match.get("category") == "threat_intel") or ("[MalwareBazaar]" in match.get("rule_name", ""))
         cards.append({
             "finding": f"YARA: {match.get('rule_name', 'unknown')}",
             "static_evidence": match.get("description") or "Rule match",
             "dynamic_evidence": "Not available (dynamic analysis not performed)" if not has_dyn_completed else "Not available (static rule)",
-            "correlation": "THREAT INTEL RULE" if is_intel else "STATIC RULE EVIDENCE",
+            "correlation": "STATIC RULE EVIDENCE",
             "confidence": "HIGH" if match.get("severity") in ("high", "critical") else "MEDIUM",
-            "evidence_state": "INTEL" if is_intel else "STATIC",
+            "evidence_state": "STATIC",
             "severity": str(match.get("severity") or "medium").upper(),
         })
 

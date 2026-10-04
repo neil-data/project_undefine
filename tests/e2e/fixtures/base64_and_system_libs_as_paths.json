@@ -39,11 +39,11 @@
   ],
   "ioc_intelligence": [
     {
-      "type": "INSTALL_PATH",
+      "type": "BASE64",
       "indicator": "aW52YWxpZGJhc2U2NGJsb2J0aGF0aXNsb25nZXJ0aGFuMzJjaGFycw=="
     },
     {
-      "type": "FILE_PATH",
+      "type": "LIBRARY",
       "indicator": "kernel32.dll"
     }
   ],

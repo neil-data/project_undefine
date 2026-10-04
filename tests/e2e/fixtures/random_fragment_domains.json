@@ -22,11 +22,7 @@
   "yara_matches": [],
   "network_indicators": {
     "ips": [],
-    "domains": [
-      "jC.bn",
-      "QMrS.lg",
-      "XB.kr"
-    ],
+    "domains": [],
     "urls": [],
     "dns_queries": [],
     "connections": []
@@ -43,15 +39,15 @@
   ],
   "ioc_intelligence": [
     {
-      "type": "DOMAIN",
+      "type": "UNKNOWN",
       "indicator": "jC.bn"
     },
     {
-      "type": "DOMAIN",
+      "type": "UNKNOWN",
       "indicator": "QMrS.lg"
     },
     {
-      "type": "DOMAIN",
+      "type": "UNKNOWN",
       "indicator": "XB.kr"
     }
   ],

@@ -138,3 +138,10 @@ Exit code: 0 (No type errors)
 Phase 6 is **COMPLETE and PASS**.
 All Category C operational, lifecycle, deployment, and concurrency requirements are fulfilled and verified without regressions across the existing codebase.
 As required by the milestone roadmap, work is stopped at the conclusion of Phase 6.
+
+---
+
+## Retrospective Correction Note (Day 2 Audit)
+
+> [!NOTE]
+> **Dynamic Provenance Clarification**: The `mirai_droppee` "dynamic" analysis data referenced in earlier Phase 6 test traces and sample fixtures originated from an in-process ASGI test harness stub (`http://testserver-sandbox` via `httpx.ASGITransport`), not an actual bare-metal or hypervisor-isolated dynamic sandbox execution. Stored reports in `reports/examples/` (including `mirai_droppee_report.json`) are synthetic fixtures generated from test harnesses and stubs and must not be presented as live production sandbox output.

@@ -16,12 +16,12 @@
   "capability_tags": [
     {
       "capability": "c2_communication",
-      "confidence": 0.95,
-      "confidence_level": "confirmed",
+      "confidence": 0.65,
+      "confidence_level": "medium",
       "evidence": [
         "Static strings and YARA rule builtin.network_indicators detected"
       ],
-      "evidence_state": "INTEL"
+      "evidence_state": "STATIC"
     }
   ],
   "narrative_summary": "The binary is a clean control sample with no detected malicious activity.",
