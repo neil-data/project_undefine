@@ -55,7 +55,7 @@ from agents.orchestrator.schema import (
 from agents.mitre_mapper.mitre_rules import map_to_mitre
 from agents.capability_classifier.capability_rules import classify_capabilities
 from agents.narrative_agent.narrative import generate_narrative
-from agents.orchestrator.risk_scoring import compute_risk_score as _compute_risk_score
+from agents.orchestrator.risk_scoring import compute_risk_score as _compute_risk_score, _is_generic_yara_rule
 from agents.investigation_engine.investigation_engine import run_investigation_workflow
 
 
@@ -173,8 +173,26 @@ def compute_risk_score(state: OrchestratorState) -> OrchestratorState:
     elif mb and mb.get("signature"):
         score = max(score, 85)
 
-    # Compute victim impact deterministically: 'critical' only with OBSERVED malicious behavior or intel floor; else max 'high'.
+    # CRITICAL is reserved for corroborated intelligence, observed malicious
+    # behavior, or an explicit malware-family YARA match.
+    static = state["static_output"]
     dynamic = state.get("dynamic_output")
+    family_names = ("mirai", "gafgyt", "mozi", "tsunami", "qbot", "hajime", "bashlite", "dofloo", "xorddos", "chamelgang")
+    family_hit = any(
+        any(family in (getattr(hit, "rule_name", "") or "").lower() for family in family_names)
+        and not _is_generic_yara_rule(getattr(hit, "rule_name", "") or "", getattr(hit, "category", "") or "")
+        for hit in getattr(static, "yara_matches", [])
+    )
+    intel_hit = bool(intel_floor or (mb and mb.get("found") and mb.get("signature")))
+    observed_hit = bool(dynamic and any((
+        getattr(dynamic, "network_connections", []), getattr(dynamic, "files_written", []),
+        getattr(dynamic, "persistence_artifacts", []), getattr(dynamic, "process_tree", []),
+        getattr(dynamic, "api_calls", []),
+    )))
+    if score >= 85 and not (intel_hit or observed_hit or family_hit):
+        score = 84
+
+    # Compute victim impact deterministically: 'critical' only with OBSERVED malicious behavior or intel floor; else max 'high'.
     is_real = getattr(dynamic, "execution_mode", "real") == "real" if dynamic else False
     has_intel_floor = bool(intel_floor or (mb and mb.get("signature")))
     has_observed_malicious = False

@@ -85,6 +85,8 @@ def _is_generic_yara_rule(rule_name: str, category: str = "") -> bool:
     name_low = rule_name.lower()
     if name_low in GENERIC_YARA_RULES:
         return True
+    if any(term in name_low or term in category.lower() for term in ("generic", "compiler", "hash_constant")):
+        return True
     if name_low.endswith("_constants") or "_constants" in name_low:
         return True
     if category.lower() in ("crypto", "mass_hunt", "generic"):
@@ -134,16 +136,12 @@ def compute_risk_score(
             or (isinstance(m, dict) and m.get("evidence_state", "STATIC") == "OBSERVED")
         ]
 
-        static_caps = [
-            c for c in capabilities
-            if (getattr(c, "evidence_state", "STATIC") or "STATIC").upper() == "STATIC"
-            or (isinstance(c, dict) and (c.get("evidence_state") or "STATIC").upper() == "STATIC")
-        ]
-        observed_caps = [
-            c for c in capabilities
-            if (getattr(c, "evidence_state", "STATIC") or "STATIC").upper() == "OBSERVED"
-            or (isinstance(c, dict) and (c.get("evidence_state") or "STATIC").upper() == "OBSERVED")
-        ]
+        def capability_state(capability) -> str:
+            value = capability.get("evidence_state", "STATIC") if isinstance(capability, dict) else getattr(capability, "evidence_state", "STATIC")
+            return str(value or "STATIC").upper()
+
+        static_caps = [c for c in capabilities if capability_state(c) == "STATIC"]
+        observed_caps = [c for c in capabilities if capability_state(c) == "OBSERVED"]
 
         # Combined static points: YARA + static MITRE + static capabilities capped together at SCORE_STATIC_CAP (20)
         static_mitre_pts = len(static_mitre) * MITRE_TECHNIQUE_WEIGHT

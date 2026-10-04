@@ -29,11 +29,9 @@ def _rule_sms_access(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnal
 
 
 def _rule_c2_comms(static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> Optional[MitreTechnique]:
-    static_c2 = "hardcoded_c2_ip" in static.static_risk_flags
     dynamic_c2 = dynamic and any(conn.get("flagged_c2") for conn in dynamic.network_connections)
-    if static_c2 or dynamic_c2:
-        confidence = 0.9 if (static_c2 and dynamic_c2) else 0.65
-        return MitreTechnique(technique_id="T1071", technique_name="Application Layer Protocol (C2)", confidence=confidence)
+    if dynamic_c2:
+        return MitreTechnique(technique_id="T1071", technique_name="Application Layer Protocol (C2)", confidence=0.9)
     return None
 
 
@@ -269,8 +267,7 @@ def _rule_web_protocols(static: StaticAnalysisOutput, dynamic: Optional[DynamicA
         or str(conn.get("protocol")).lower() in ("http", "https")
         for conn in dynamic.network_connections
     )
-    static_hit = bool(static.extracted_strings.urls)
-    if dynamic_hit or static_hit:
+    if dynamic_hit:
         return MitreTechnique(
             technique_id="T1071.001",
             technique_name="Application Layer Protocol: Web Protocols",

@@ -36,10 +36,10 @@ class TestC2CommsRule:
         ids = [t.technique_id for t in techniques]
         assert "T1071" in ids
 
-    def test_fires_on_static_hardcoded_ip_alone(self, android_malicious_static):
+    def test_static_hardcoded_ip_alone_does_not_claim_c2_technique(self, android_malicious_static):
         techniques = map_to_mitre(android_malicious_static, None)
         ids = [t.technique_id for t in techniques]
-        assert "T1071" in ids
+        assert "T1071" not in ids
 
     def test_does_not_fire_without_any_c2_signal(self, benign_static, empty_dynamic):
         techniques = map_to_mitre(benign_static, empty_dynamic)

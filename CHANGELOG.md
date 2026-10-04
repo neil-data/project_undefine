@@ -155,3 +155,8 @@ All notable changes to the E-Rakshak malware analysis and triage pipeline are do
 - Added raw pipeline inputs, report-builder IOC validation, mocked narrative entrypoint checks, and static-YARA C2 provenance coverage.
 - Static YARA/network hits now report STATIC network communication; static evidence cannot create c2_communication.
 - Contextually accept valid short-SLD domain names from URLs and observed DNS queries while retaining the three-character rule for bare domains.
+
+## Day 3 — score, timeline, recommendation, and MITRE safeguards
+- Capped reported static MITRE and capability contributions, gated unsupported CRITICAL scores, and assigned zero score to generic/compiler/hash-constant YARA rules.
+- Removed synthetic approximate timeline timestamps while preserving event sequence labels.
+- Suppressed credential remediation advice without a credential capability and limited T1071 techniques to observed network traffic.

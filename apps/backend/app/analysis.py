@@ -650,17 +650,10 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
         {"seq": 2, "timestamp": static_ts, "event": "Static analysis completed", "source": "Static Analysis", "indicator": "YARA / metadata / IOC extraction", "severity": "INFO"},
     ]
 
-    has_real_timestamps = any(bool(c.get("timestamp")) for c in (dyn_dict or {}).get("network_connections", []))
-    seen_timestamps: set[str] = {submitted_at, static_ts}
-
     event_idx = 3
     for conn in (dyn_dict or {}).get("network_connections", []):
         raw_ts = conn.get("timestamp")
-        if raw_ts and raw_ts not in seen_timestamps:
-            ts = raw_ts
-            seen_timestamps.add(ts)
-        else:
-            ts = f"+{event_idx - 2}s (approx)" if not has_real_timestamps else "+0.000s"
+        ts = raw_ts or None
 
         timeline.append({
             "seq": event_idx,
@@ -673,10 +666,9 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
         event_idx += 1
 
     for query in (dyn_dict or {}).get("dns_queries", []):
-        ts = f"+{event_idx - 2}s (approx)" if not has_real_timestamps else "+0.000s"
         timeline.append({
             "seq": event_idx,
-            "timestamp": ts,
+            "timestamp": None,
             "event": "DNS query",
             "source": source_label,
             "indicator": str(query),
@@ -685,10 +677,9 @@ def _build_evidence_timeline(submitted_at: str, dynamic_output: Optional[dict | 
         event_idx += 1
 
     if correlations:
-        ts = f"+{event_idx - 2}s (approx)" if not has_real_timestamps else "+0.000s"
         timeline.append({
             "seq": event_idx,
-            "timestamp": ts,
+            "timestamp": None,
             "event": "Evidence correlation completed",
             "source": "Correlation Engine",
             "indicator": f"{len(correlations)} evidence link(s)",
@@ -719,7 +710,7 @@ def _build_risk_explanation(
         rname = ym.get("rule_name", "") if isinstance(ym, dict) else getattr(ym, "rule_name", "")
         rcat = ym.get("category", "") if isinstance(ym, dict) else getattr(ym, "category", "")
         name_low = rname.lower()
-        if name_low in GENERIC_YARA_RULES or name_low.endswith("_constants") or "_constants" in name_low or rcat.lower() in ("crypto", "mass_hunt", "generic"):
+        if name_low in GENERIC_YARA_RULES or name_low.endswith("_constants") or "_constants" in name_low or rcat.lower() in ("crypto", "mass_hunt", "generic") or any(term in name_low or term in rcat.lower() for term in ("generic", "compiler", "hash_constant")):
             continue  # Generic rules contribute 0
         fam_key = rname.split("_")[0].lower() if "_" in rname else rname.lower()
         if fam_key not in seen_fams:
@@ -729,13 +720,24 @@ def _build_risk_explanation(
             yara_points += 5
     yara_points = min(yara_points, 40)
 
-    mitre_points = len(mitre_techniques) * 8
-    cap_points = sum(int((c.get('confidence', 0) if isinstance(c, dict) else getattr(c, 'confidence', 0)) * 15) for c in capability_tags)
+    def field(item, key, default=None):
+        return item.get(key, default) if isinstance(item, dict) else getattr(item, key, default)
+
+    static_mitre = sum(8 for t in mitre_techniques if str(field(t, "evidence_state", "STATIC")).upper() != "OBSERVED")
+    observed_mitre = len(mitre_techniques) * 8 - static_mitre
+    static_caps = sum(int(float(field(c, "confidence", 0)) * 15) for c in capability_tags if str(field(c, "evidence_state", "STATIC")).upper() != "OBSERVED")
+    observed_caps = sum(int(float(field(c, "confidence", 0)) * 15) for c in capability_tags if str(field(c, "evidence_state", "STATIC")).upper() == "OBSERVED")
+    static_total = static_mitre + static_caps
+    if static_total > 20:
+        static_caps = min(static_caps, 20)
+        static_mitre = min(static_mitre, 20 - static_caps)
 
     parts = [
         {"rule": "yara", "label": "YARA detections", "points": yara_points, "kind": "rule"},
-        {"rule": "mitre", "label": "MITRE techniques", "points": mitre_points, "kind": "rule"},
-        {"rule": "capabilities", "label": "Capability evidence", "points": cap_points, "kind": "rule"},
+        {"rule": "mitre", "label": "Static MITRE techniques", "points": static_mitre, "kind": "rule"},
+        {"rule": "capabilities", "label": "Static capability evidence", "points": static_caps, "kind": "rule"},
+        {"rule": "observed_mitre", "label": "Observed MITRE techniques", "points": observed_mitre, "kind": "rule"},
+        {"rule": "observed_capabilities", "label": "Observed capability evidence", "points": observed_caps, "kind": "rule"},
     ]
     rule_explained = sum(item["points"] for item in parts)
 
@@ -744,7 +746,7 @@ def _build_risk_explanation(
 
     if risk_score > rule_explained:
         diff = risk_score - rule_explained
-        if intel_sig or risk_score >= 85:
+        if intel_sig:
             parts.append({
                 "rule": "intel_floor",
                 "label": f"Threat intelligence floor (MalwareBazaar intelligence floor - {intel_sig or 'confirmed malware'}): high-confidence known malware signature (raised to {risk_score})",
@@ -1045,6 +1047,9 @@ def _generate_recommendations(
         for c in (capabilities or [])
         if (getattr(c, "capability", None) or (isinstance(c, dict) and c.get("capability")))
     }
+    has_credential_evidence = bool(cap_names.intersection({
+        "credential_access", "credential_dumping", "password_theft", "keylogging",
+    }))
     mitre_ids = {
         (t.technique_id if hasattr(t, "technique_id") else t.get("technique_id", "")).upper()
         for t in (mitre or [])
@@ -1063,13 +1068,12 @@ def _generate_recommendations(
         if not has_existing_isolation:
             add_rec("Isolate infected endpoint(s) from the internal network immediately to halt command-and-control communication and lateral propagation.")
         plat_lower = str(platform or "").lower()
-        if plat_lower == "android":
+        if plat_lower == "android" and has_credential_evidence:
             add_rec("Revoke all active session tokens, OAuth grants, and mobile device credentials.")
-        elif plat_lower in ("windows", "pe", "exe"):
+        elif plat_lower in ("windows", "pe", "exe") and has_credential_evidence:
             add_rec("Revoke all active session tokens, Kerberos tickets, and stored credentials accessed from this endpoint.")
         else:
-            has_credential_ev = any("credential" in c or "keylog" in c or "password" in c for c in cap_names) or "T1056.001" in mitre_ids
-            if has_credential_ev:
+            if has_credential_evidence:
                 add_rec("Revoke active SSH keys, local session credentials, and user tokens accessed from this endpoint.")
     elif risk_score >= 30 or verdict == "SUSPICIOUS":
         if not has_existing_isolation:
@@ -1090,7 +1094,7 @@ def _generate_recommendations(
     # 4. Capability-Specific Remediation Actions
     if any("sms" in c for c in cap_names) or "T1517" in mitre_ids:
         add_rec("Audit linked financial accounts and notify mobile operators regarding potential SMS OTP interception and unauthorized transaction attempts.")
-    if any("keylog" in c or "credential" in c for c in cap_names) or "T1056.001" in mitre_ids:
+    if has_credential_evidence:
         add_rec("Enforce out-of-band master password resets across all corporate and administrative accounts used on this workstation.")
     if any("overlay" in c or "phishing" in c for c in cap_names) or "T1417" in mitre_ids:
         add_rec("Inspect accessibility service permissions and overlay privileges (SYSTEM_ALERT_WINDOW) to remove rogue UI hijackers.")
@@ -1118,6 +1122,9 @@ def _generate_recommendations(
         else:
             add_rec("No network or file indicators were produced. Block the SHA-256 and review the host manually.")
 
+    if not has_credential_evidence:
+        credential_terms = ("password", "oauth", "kerberos", "credential", "token rotation", "reset credentials", "session token", "ssh key")
+        recs = [r for r in recs if not any(term in r.lower() for term in credential_terms)]
     return recs
 
 
