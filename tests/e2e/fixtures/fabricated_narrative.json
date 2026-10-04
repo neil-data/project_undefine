@@ -1,0 +1,105 @@
+{
+  "sample_id": "e945cee65f43402a97a9c0725237bc7605306c0a5402b48a50759ce1f0aba776",
+  "synthetic": true,
+  "metadata": {
+    "synthetic": true
+  },
+  "platform": "linux",
+  "file_type": "elf",
+  "file_size_bytes": 97,
+  "file_size_formatted": "97 B",
+  "risk_score": 0,
+  "status": "clean",
+  "threat_level": "LOW",
+  "victim_impact": "NONE",
+  "mitre_techniques": [],
+  "capability_tags": [],
+  "narrative_summary": "Malware investigation summary.\n\n| Step | Action |\n|------|--------|\n| Step 1 | Decrypt payload using XOR key 0x5A and drop to /var/tmp/malware.bin |<br>The sample then executes",
+  "submitted_at": "2026-10-03T04:49:39.910085+00:00",
+  "sha256": "e945cee65f43402a97a9c0725237bc7605306c0a5402b48a50759ce1f0aba776",
+  "md5": "663ca86fa6146139ef19292e87f913d2",
+  "sha1": "3931cde5ea3e9941f5553fc5b89feaf9c10d03f3",
+  "yara_matches": [],
+  "network_indicators": {
+    "ips": [],
+    "domains": [],
+    "urls": [],
+    "dns_queries": [],
+    "connections": []
+  },
+  "threat_assessment": {
+    "risk_score": 0,
+    "threat_level": "LOW",
+    "verdict": "CLEAN",
+    "confidence": 95,
+    "key_findings": []
+  },
+  "recommendations": [
+    "No remediation necessary for clean control binary."
+  ],
+  "ioc_intelligence": [],
+  "evidence_correlation": [],
+  "evidence_timeline": [
+    {
+      "timestamp": "2026-10-03T04:49:39.910085+00:00",
+      "event": "Sample received",
+      "source": "Ingestion",
+      "indicator": "SHA-256 anchored artifact",
+      "severity": "INFO",
+      "seq": 1
+    },
+    {
+      "timestamp": "2026-10-03T04:49:40.100000+00:00",
+      "event": "Static analysis completed",
+      "source": "Static Analysis",
+      "indicator": "Parser / IOC extraction",
+      "severity": "INFO",
+      "seq": 2
+    }
+  ],
+  "risk_explanation": {
+    "score": 0,
+    "contributions": [],
+    "method": "Deterministic weighted risk scoring"
+  },
+  "dynamic_analysis": {
+    "available": true,
+    "execution_mode": "real",
+    "dynamic_status": "completed",
+    "failure_reason": null,
+    "status": "completed",
+    "message": "Execution finished without malicious indicators.",
+    "duration_seconds": 10,
+    "process_tree": [
+      {
+        "pid": 1001,
+        "name": "clean_sample",
+        "process_name": "clean_sample",
+        "cmdline": "./clean_sample",
+        "timestamp": "+0.000s",
+        "status": "completed",
+        "seq": 1
+      }
+    ],
+    "network_connections": [],
+    "api_calls": [
+      "sys_execve",
+      "sys_exit_group"
+    ],
+    "dns_queries": [],
+    "files_written": [],
+    "registry_changes": [],
+    "persistence_artifacts": []
+  },
+  "dynamic_status": "completed",
+  "malware_bazaar": {
+    "found": false,
+    "query_status": "hash_not_found",
+    "hash": "663ca86fa6146139ef19292e87f913d2",
+    "classification": "CLEAN",
+    "confidence": "HIGH",
+    "threat_level": "LOW",
+    "intel_note": "No match found",
+    "evidence_state": "INTEL"
+  }
+}

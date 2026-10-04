@@ -1,12 +1,33 @@
-.....F...FFF....ss                                                       [100%]
+........................F.......F.F...FFF.....F.F.......F.....F.F.....F. [ 61%]
+.....F...F......................sssssssssssss                            [100%]
 ================================== FAILURES ===================================
-C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:123: AssertionError: [mirai_droppee] Narrative appears truncated; ends with ', indicating outbound traffic)' without sentence terminal punctuation
-C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:212: AssertionError: [mirai_droppee] Static-derived MITRE+capability points (31) exceeded maximum allowed 20 points (mitre=8, caps=23)
-C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:259: AssertionError: [control_benign] Duplicate identical timestamp '2026-10-03T04:49:39.910085+00:00' lacks distinguishing label
-C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:259: AssertionError: [mirai_droppee] Duplicate identical timestamp '2026-10-03T04:49:45.980983+00:00' lacks distinguishing label
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:84: AssertionError: [static_rule_labeled_intel] Static-derived capability 'c2_communication' labeled as 'INTEL' instead of STATIC
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:114: AssertionError: [fabricated_narrative] Raw markdown table syntax '| Step' found in narrative
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:120: AssertionError: [llm_refusal] LLM refusal phrase 'i'm sorry' detected in narrative
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:123: AssertionError: [synthetic_mirai_droppee] Narrative appears truncated; ends with ', indicating outbound traffic)' without sentence terminal punctuation
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:180: AssertionError: [base64_and_system_libs_as_paths] Invalid path IoC 'aW52YWxpZGJhc2U2NGJsb2J0aGF0aXNsb25nZXJ0aGFuMzJjaGFycw==': Base64 blob detected as path: aW52YWxpZGJhc2U2NGJsb2J0aGF0aXNsb25nZXJ0aGFuMzJjaGFycw==
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:169: AssertionError: [benign_hosts_suspicious] Whitelisted benign domain 'go.dev' marked as suspicious/malicious
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:165: AssertionError: [go_symbols_as_domains] Invalid domain IoC 'fmt.pp': Go symbol/package prefix detected as domain: fmt.pp
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:165: AssertionError: [random_fragment_domains] Invalid domain IoC 'jC.bn': Mixed-case SLD fragment: jC.bn
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:228: AssertionError: [critical_all_vendors_clean] CRITICAL risk score (90) claimed without threat intel, observed execution, or family match
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:212: AssertionError: [static_cap_exceeded] Static-derived MITRE+capability points (35) exceeded maximum allowed 20 points (mitre=10, caps=25)
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:212: AssertionError: [synthetic_mirai_droppee] Static-derived MITRE+capability points (31) exceeded maximum allowed 20 points (mitre=8, caps=23)
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:259: AssertionError: [duplicate_timestamps_synthetic_offset] Duplicate identical timestamp '2026-10-03T04:49:39.910085+00:00' lacks distinguishing label
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:259: AssertionError: [synthetic_mirai_droppee] Duplicate identical timestamp '2026-10-03T04:49:45.980983+00:00' lacks distinguishing label
+C:\Users\Neil\Downloads\E_Rakshak_v4.1\E-Rakshak_v3.0\E-Rakshak_v2.8\tests\e2e\test_e2e_baseline.py:301: AssertionError: [credential_advice_no_evidence] Credential rotation recommended without credential theft evidence: 'Rotate all domain passwords and OAuth tokens immediately.'
 =========================== short test summary info ===========================
-FAILED tests/e2e/test_e2e_baseline.py::test_narrative[mirai_droppee] - Assert...
-FAILED tests/e2e/test_e2e_baseline.py::test_score[mirai_droppee] - AssertionE...
-FAILED tests/e2e/test_e2e_baseline.py::test_timeline_meta[control_benign] - A...
-FAILED tests/e2e/test_e2e_baseline.py::test_timeline_meta[mirai_droppee] - As...
-4 failed, 12 passed, 2 skipped in 0.22s
+FAILED tests/e2e/test_e2e_baseline.py::test_source_separation[static_rule_labeled_intel]
+FAILED tests/e2e/test_e2e_baseline.py::test_narrative[fabricated_narrative]
+FAILED tests/e2e/test_e2e_baseline.py::test_narrative[llm_refusal] - Assertio...
+FAILED tests/e2e/test_e2e_baseline.py::test_narrative[synthetic_mirai_droppee]
+FAILED tests/e2e/test_e2e_baseline.py::test_iocs[base64_and_system_libs_as_paths]
+FAILED tests/e2e/test_e2e_baseline.py::test_iocs[benign_hosts_suspicious] - A...
+FAILED tests/e2e/test_e2e_baseline.py::test_iocs[go_symbols_as_domains] - Ass...
+FAILED tests/e2e/test_e2e_baseline.py::test_iocs[random_fragment_domains] - A...
+FAILED tests/e2e/test_e2e_baseline.py::test_score[critical_all_vendors_clean]
+FAILED tests/e2e/test_e2e_baseline.py::test_score[static_cap_exceeded] - Asse...
+FAILED tests/e2e/test_e2e_baseline.py::test_score[synthetic_mirai_droppee] - ...
+FAILED tests/e2e/test_e2e_baseline.py::test_timeline_meta[duplicate_timestamps_synthetic_offset]
+FAILED tests/e2e/test_e2e_baseline.py::test_timeline_meta[synthetic_mirai_droppee]
+FAILED tests/e2e/test_e2e_baseline.py::test_recommendations[credential_advice_no_evidence]
+14 failed, 90 passed, 13 skipped in 0.66s

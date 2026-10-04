@@ -94,7 +94,7 @@ def load_all_fixtures() -> Dict[str, Dict[str, Any]]:
     """Loads all JSON report fixtures available in tests/e2e/fixtures."""
     fixtures = {}
     if FIXTURES_DIR.exists():
-        for p in FIXTURES_DIR.glob("*.json"):
+        for p in sorted(FIXTURES_DIR.glob("*.json")):
             try:
                 data = json.loads(p.read_text(encoding="utf-8"))
                 fixtures[p.stem] = data
@@ -132,9 +132,25 @@ def is_valid_domain(domain: str) -> Tuple[bool, str]:
     tld = parts[-1]
     sld = parts[-2]
 
+    # Legitimate benign domains
+    if domain.lower() in LEGITIMATE_BENIGN_DOMAINS:
+        return True, "Legitimate benign domain"
+
     # Mixed-case TLD check (e.g. .Com, .Org)
     if not (tld.islower() or tld.isupper()):
         return False, f"Mixed-case TLD: {tld}"
+
+    # Mixed-case SLD fragment check (e.g. jC, QMrS)
+    if re.search(r"[a-z][A-Z]|[A-Z]{2,}[a-z]", sld):
+        return False, f"Mixed-case SLD fragment: {domain}"
+
+    # Go standard library / runtime symbol as domain (e.g. fmt.pp, go.shape, io.pipe, os.file)
+    go_package_prefixes = {
+        "fmt", "go", "io", "os", "runtime", "sync", "bytes", "strings",
+        "net", "math", "time", "bufio", "path", "sort", "strconv",
+    }
+    if parts[0].lower() in go_package_prefixes and len(parts) == 2:
+        return False, f"Go symbol/package prefix detected as domain: {domain}"
 
     tld_lower = f".{tld.lower()}"
     if tld_lower in SYSTEMD_SUFFIXES:

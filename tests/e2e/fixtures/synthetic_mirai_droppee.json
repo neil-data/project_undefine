@@ -298,5 +298,9 @@
     ],
     "verified_at": "2026-10-03T04:49:51.187850"
   },
-  "chain_length": 4
+  "chain_length": 4,
+  "synthetic": true,
+  "metadata": {
+    "synthetic": true
+  }
 }
