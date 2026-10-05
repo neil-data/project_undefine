@@ -1,23 +1,18 @@
 # Day 5 Preflight & Self-Check Status
 
-Captured 2026-10-05. `scripts/provider_selfcheck.py` executed once through the app's config loader.
-No secret values or key materials were logged, printed, or written to disk.
+Captured 2026-10-05. `scripts/provider_selfcheck.py` and `scripts/live_check.py` executed cleanly.
+Zero secrets, credentials, or real sample bytes were printed, stored, or exposed.
 
 | Provider / Check | Status | Reason |
 | --- | --- | --- |
-| Hybrid Analysis runtime key | PASS | `HYBRID_ANALYSIS_API_KEY` is present and loaded via config loader (value redacted). |
-| Hybrid Analysis hash lookup | PASS | Documented GET `https://www.hybrid-analysis.com/api/v2/search/hash` returned HTTP 200 for public hash `4faccd95...`. |
-| Hybrid Analysis key-info / quota | UNVERIFIED | Not officially verified against public documentation for this key tier; undocumented endpoints are not guessed. |
-| Hybrid Analysis submit permission | UNVERIFIED | No live sample submitted; external submission requires verified key permissions. |
-| MobSF Docker image pin | WARN | `docker-compose.yml` specifies floating/unpinned tag `opensecurity/mobile-security-framework-mobsf:latest`. |
-| MobSF URL reachability | FAIL | Connection actively refused at configured URL (`http://localhost:8001`). MobSF container in crash-loop (`DWD_DIR` posixpath issue on `latest` image). |
-| MobSF API key acceptance | FAIL | Unreachable host; could not probe `/api/v1/upload`. |
-| MobSF version / about | UNVERIFIED | Unreachable host. |
-| MobSF dynamic analyzer readiness | UNVERIFIED | Unreachable host. |
-
-## Actions required
-See `audit/day5/HUMAN_STEPS.md` for exact PowerShell steps:
-1. Pin the MobSF Docker tag in `docker-compose.yml` (replacing `latest`) and restart the container.
-2. Run `python scripts/provider_selfcheck.py` to confirm MobSF passes.
-3. Run `python scripts/record_provider_responses.py` (with `--apk` if testing MobSF).
-4. Run secrets check and commit the recordings to proceed past the Phase 2 GATE.
+| Hybrid Analysis runtime key | PASS | `HYBRID_ANALYSIS_API_KEY` present and loaded via centralized config loader (value redacted). |
+| Hybrid Analysis hash lookup | PASS | Documented GET `https://www.hybrid-analysis.com/api/v2/search/hash` verified (HTTP 200). |
+| Hybrid Analysis environments | PASS | Parsed dynamically from verified environments recording (`environments.json`), selecting Linux ID 330 and Windows ID 160. |
+| Hybrid Analysis key-info / quota | PASS | Recorded in `key_current.json` (auth_level 1, restricted). |
+| Hybrid Analysis submission | GATED / SKIP | External sample submission disabled (`ALLOW_EXTERNAL_SUBMISSION=false`); restricted key cannot submit. |
+| MobSF URL reachability | PASS | MobSF server verified reachable at `http://localhost:8003`. |
+| MobSF API key acceptance | PASS | Probed `/api/v1/upload` without file; returned HTTP 400 (auth accepted). |
+| MobSF static pipeline | PASS | Upload -> scan -> report_json -> normalize -> delete_scan workflow verified. |
+| MobSF dynamic analyzer | GATED / SKIP | Android emulator is ADB `offline`; dynamic analysis safely skipped (`Dynamic analysis not performed: analyzer/emulator not ready`). |
+| Mach-O platform | PASS | Verified static-only routing without dynamic execution (`Dynamic analysis: not performed (static-only)`). |
+| Unsupported architectures | PASS | ELF non-x86_64 cleanly mapped to `NOT_SUPPORTED_PLATFORM`. |

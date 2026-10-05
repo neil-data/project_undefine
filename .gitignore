@@ -43,3 +43,4 @@ sandbox/adapters/mobsf/test_files/
 sandbox-host/artifacts/
 sandbox/host/artifacts/
 scratch/
+.ha_budget.json
