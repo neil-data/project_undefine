@@ -63,3 +63,15 @@ response, submit endpoint/multipart fields, submission-permission check,
 polling/status endpoint and states, report fetch schema, request deletion, and
 quota response. The official API reference is client-rendered and did not
 expose its schema here. No guessed methods or endpoints were added.
+
+## Part 3 MobSF documentation gate
+
+`docker-compose.yml` uses the floating image tag
+`opensecurity/mobile-security-framework-mobsf:latest`; the Docker engine is
+not available in this environment, so there is no installed version whose own
+routes or docs can be verified. UNVERIFIED and intentionally unimplemented:
+URL health route, API-key validation route/header, upload/scan/report schema,
+scan deletion operation, dynamic analyzer readiness, start/install/run/stop
+routes, and dynamic report schema. The existing `sandbox/adapters/mobsf` files
+are legacy code and are not treated as documentation for the installed build.
+No MobSF request or APK upload was made.
