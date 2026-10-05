@@ -5,28 +5,22 @@ databases:
   - name: e-rakshak-db
     databaseName: ps4_malware
     user: ps4
-    plan: starter
+    plan: free
 
 services:
-  # 1. E-Rakshak Backend API
+  # 1. E-Rakshak Backend API (100% Free Plan)
   - type: web
     name: e-rakshak-backend
     runtime: docker
     dockerfilePath: ./apps/backend/Dockerfile
     dockerContext: .
-    plan: starter
+    plan: free
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: e-rakshak-db
           property: connectionString
-      - key: REDIS_URL
-        value: redis://e-rakshak-redis:6379
-      - key: ELASTICSEARCH_URL
-        value: http://e-rakshak-elasticsearch:9200
-      - key: MOBSF_URL
-        value: http://e-rakshak-mobsf:8000
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: ALLOW_DB_FALLBACK
@@ -36,7 +30,13 @@ services:
       - key: CORS_ORIGINS
         value: "https://project-undefine.vercel.app,http://localhost:3000,http://localhost:5173"
       - key: INGESTION_SAMPLES_DIR
-        value: /app/ingestion_samples
+        value: "/tmp/ingestion_samples"
+      - key: REDIS_URL
+        sync: false
+      - key: ELASTICSEARCH_URL
+        sync: false
+      - key: MOBSF_URL
+        sync: false
       - key: HYBRID_ANALYSIS_API_KEY
         sync: false
       - key: MALWARE_BAZAAR_API_KEY
@@ -45,53 +45,4 @@ services:
         sync: false
       - key: MOBSF_API_KEY
         sync: false
-    disk:
-      name: backend-ingestion-samples
-      mountPath: /app/ingestion_samples
-      sizeGB: 10
 
-  # 2. Redis Cache & Task Queue
-  - type: pserv
-    name: e-rakshak-redis
-    runtime: image
-    image:
-      url: redis:7-alpine
-    plan: starter
-    disk:
-      name: redis-data
-      mountPath: /data
-      sizeGB: 5
-
-  # 3. Elasticsearch
-  - type: pserv
-    name: e-rakshak-elasticsearch
-    runtime: image
-    image:
-      url: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
-    plan: standard
-    envVars:
-      - key: discovery.type
-        value: single-node
-      - key: xpack.security.enabled
-        value: "false"
-      - key: ES_JAVA_OPTS
-        value: "-Xms512m -Xmx512m"
-    disk:
-      name: elasticsearch-data
-      mountPath: /usr/share/elasticsearch/data
-      sizeGB: 10
-
-  # 4. MobSF Mobile Security Framework (Isolated Private Service)
-  - type: pserv
-    name: e-rakshak-mobsf
-    runtime: image
-    image:
-      url: opensecurity/mobile-security-framework-mobsf:latest
-    plan: standard
-    envVars:
-      - key: MOBSF_HOME
-        value: /home/mobsf/.MobSF
-    disk:
-      name: mobsf-data
-      mountPath: /home/mobsf/.MobSF
-      sizeGB: 10
