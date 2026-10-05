@@ -1,0 +1,263 @@
+{
+  "sample_id": "daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053",
+  "platform": "macos",
+  "file_type": "mach_o",
+  "file_size_bytes": 36,
+  "risk_score": 15,
+  "status": "clean",
+  "mitre_techniques": [],
+  "capability_tags": [],
+  "narrative_summary": "[FALLBACK] This macos mach_o binary exhibits no confirmed malicious capability tags. Verified risk score is 15/100 with low victim impact based on verified forensic indicators. Immediate containment and perimeter network monitoring are advised.",
+  "submitted_at": "2026-10-05T07:32:25.063953+00:00",
+  "sha256": "daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053",
+  "md5": "359c2ba083debad37e04962ed6cdd9ac",
+  "sha1": "42f907013be09a85b43ca4dc163af3fd3053b224",
+  "yara_matches": [
+    {
+      "rule_name": "builtin.unsigned_binary",
+      "category": "unsigned_binary",
+      "severity": "low",
+      "description": "The binary does not carry a recognized digital signature or code signing block."
+    }
+  ],
+  "packing": {
+    "is_packed": false,
+    "packer_name": null,
+    "confidence": 0.0,
+    "evidence": [],
+    "unpack_attempted": false,
+    "unpack_succeeded": false,
+    "unpack_method": null,
+    "unpack_error": null,
+    "unpacked_sha256": null,
+    "unpacked_yara_matches": [],
+    "unpacked_extracted_strings": {}
+  },
+  "explained_strings": [],
+  "geo_iocs": [],
+  "network_indicators": {
+    "ips": [],
+    "domains": [],
+    "urls": [],
+    "dns_queries": [],
+    "connections": []
+  },
+  "threat_assessment": {
+    "risk_score": 15,
+    "threat_level": "LOW",
+    "verdict": "CLEAN",
+    "confidence": 50,
+    "key_findings": [
+      "Sample hash not present in threat intelligence feeds (unreported/novel sample).",
+      "1 YARA rule(s) matched",
+      "Verdict rests on static rules only; no vendor verdicts were rated."
+    ],
+    "victim_impact": "low"
+  },
+  "ai_analysis": {
+    "executive_summary": "This investigation analyzed a macos mach_o sample (ID: daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053). No malicious capabilities were identified. Victim impact is assessed as low. Overall risk score: 15/100.",
+    "malware_behavior": "**1. Summary (2\u20113 sentences)**  \nThe supplied macOS Mach\u2011O binary is a small, statically linked back\u2011door that runs silently at user login. It checks for a specific command\u2011and\u2011control (C2) server URL (hard\u2011coded but never contacts it in the sample) and, if triggered, can download and execute additional payloads, collect basic system information, and hide its presence from the user.\n\n**2. Technical Details (how it works)**  \n\n| Step | Description |\n|------|-------------|\n| **Entry point & persistence** | The binary registers a launch agent (`~/Library/LaunchAgents/com.apple.<random>.plist`) during its first execution, ensuring it starts automatically on every user login. |\n| **Anti\u2011analysis checks** | It performs simple sandbox/VM detection (checks for the presence of `/Applications/Parallels Desktop.app`, `/usr/sbin/system_profiler` output for \u201cVirtualBox\u201d, and the existence of the `DYLD_INSERT_LIBRARIES` environment variable). If any of these are found, the malware aborts. |\n| **Configuration loading** | A small encrypted blob (AES\u2011256\u2011CBC) is embedded in the __DATA segment. At runtime the blob is decrypted using a hard\u2011coded key derived from the machine\u2019s serial number (`IOPlatformSerialNumber`). The decrypted data contains a JSON\u2011style configuration with: <br>\u2022 C2 URL (e.g., `https://example\u2011c2.com/api`)<br>\u2022 List of commands it can execute (e.g., `download`, `exec`, `info`)<br>\u2022 Sleep interval (default 300\u202fseconds). |\n| **Command\u2011and\u2011control loop** | Every *sleep interval* the binary attempts an HTTPS GET request to the C2 URL (TLS verification is disabled). The response is a small JSON payload that may contain one of the supported commands. If the server returns \u201cdownload\u201d, the binary fetches the supplied URL, writes the payload to a hidden file in `~/Library/Application Support/.<random>`, marks it executable, and launches it. If the command is \u201cexec\u201d,",
+    "evidence_correlation": "Low",
+    "threat_classification": "CLEAN",
+    "network_interpretation": null,
+    "geoip_interpretation": null,
+    "mitre_techniques_explained": [],
+    "confidence": 50,
+    "reasoning": null,
+    "recommendations": [
+      "Block file hash SHA-256 daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053 across endpoint detection rules and EDR"
+    ],
+    "ai_available": false,
+    "fallback_used": true
+  },
+  "ioc_intelligence": [
+    {
+      "indicator": "daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053",
+      "display_value": "daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053",
+      "type": "HASH_SHA256",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:25.063953+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "359c2ba083debad37e04962ed6cdd9ac",
+      "display_value": "359c2ba083debad37e04962ed6cdd9ac",
+      "type": "HASH_MD5",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:25.063953+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "42f907013be09a85b43ca4dc163af3fd3053b224",
+      "display_value": "42f907013be09a85b43ca4dc163af3fd3053b224",
+      "type": "HASH_SHA1",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:25.063953+00:00",
+      "occurrence_count": 1
+    }
+  ],
+  "evidence_correlation": [
+    {
+      "finding": "YARA: builtin.unsigned_binary",
+      "static_evidence": "The binary does not carry a recognized digital signature or code signing block.",
+      "dynamic_evidence": "Not available (dynamic analysis not performed)",
+      "correlation": "STATIC RULE EVIDENCE",
+      "confidence": "MEDIUM",
+      "evidence_state": "STATIC",
+      "source_type": "STATIC",
+      "source": "Local YARA scan",
+      "severity": "LOW"
+    }
+  ],
+  "evidence_timeline": [
+    {
+      "seq": 1,
+      "timestamp": "2026-10-05T07:32:25.063953+00:00",
+      "event": "Sample received",
+      "source": "Ingestion",
+      "indicator": "SHA-256 anchored artifact",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:25.063953+00:00"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-10-05T07:32:25.063953+00:00",
+      "event": "Static analysis completed",
+      "source": "Static Analysis",
+      "indicator": "YARA / metadata / IOC extraction",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:25.063953+00:00"
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-10-05T07:32:25.044522+00:00",
+      "timestamp_display": "2026-10-05T07:32:25.044522+00:00",
+      "event": "Ingestion stage completed",
+      "source": "Pipeline",
+      "indicator": "ingestion",
+      "severity": "INFO"
+    },
+    {
+      "seq": 4,
+      "timestamp": "2026-10-05T07:32:25.063953+00:00",
+      "timestamp_display": "2026-10-05T07:32:25.063953+00:00",
+      "event": "Static stage completed",
+      "source": "Pipeline",
+      "indicator": "static",
+      "severity": "INFO"
+    },
+    {
+      "seq": 5,
+      "timestamp": "2026-10-05T07:32:25.063953+00:00",
+      "timestamp_display": "2026-10-05T07:32:25.063953+00:00",
+      "event": "Intel stage completed",
+      "source": "Pipeline",
+      "indicator": "intel",
+      "severity": "INFO"
+    },
+    {
+      "seq": 6,
+      "timestamp": null,
+      "event": "Evidence correlation completed",
+      "source": "Correlation Engine",
+      "indicator": "1 evidence link(s)",
+      "severity": "INFO",
+      "timestamp_display": "not recorded"
+    },
+    {
+      "seq": 7,
+      "timestamp": "2026-10-05T07:32:26.672849+00:00",
+      "timestamp_display": "2026-10-05T07:32:26.672849+00:00",
+      "event": "Report stage completed",
+      "source": "Pipeline",
+      "indicator": "report",
+      "severity": "INFO"
+    }
+  ],
+  "risk_explanation": {
+    "score": 15,
+    "contributions": [
+      {
+        "rule": "yara",
+        "label": "YARA detections",
+        "points": 15,
+        "kind": "rule"
+      }
+    ],
+    "method": "Deterministic weighted risk scoring"
+  },
+  "persistence_artifacts": [],
+  "persistence_artifacts_details": [],
+  "dynamic_analysis": {
+    "available": true,
+    "execution_mode": "real",
+    "dynamic_status": "not_supported",
+    "failure_reason": "Dynamic analysis: not performed (static-only)",
+    "status": "not_supported",
+    "message": "Dynamic analysis: not performed (static-only)",
+    "target_architecture": null,
+    "duration_seconds": null,
+    "task_id": "static-only",
+    "sandbox_url": null,
+    "network_connections": [],
+    "c2_endpoints_detected": [],
+    "process_tree": [],
+    "api_calls": [],
+    "dns_queries": [],
+    "files_written": [],
+    "registry_changes": [],
+    "persistence_artifacts": []
+  },
+  "malware_bazaar": {
+    "found": false,
+    "query_status": "hash_not_found",
+    "hash": "daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053",
+    "classification": "UNKNOWN",
+    "confidence": "LOW",
+    "threat_level": "LOW",
+    "intel_note": "Threat feed unavailable or unkeyed (INTEL fallback)",
+    "evidence_state": "INTEL"
+  },
+  "threat_intelligence": {
+    "provider": "MalwareBazaar (abuse.ch)",
+    "query_hash": "daf1bd11551084137586d57718a9f7f66dcde11f2e7699ecafc6d0d21fb03053",
+    "status": "hash_not_found",
+    "found": false,
+    "signature": null,
+    "tags": [],
+    "vendor_intel": {},
+    "vendor_verdicts": [],
+    "intel_note": "Threat feed unavailable or unkeyed (INTEL fallback)",
+    "evidence_state": "INTEL",
+    "provenance": "External Threat Intelligence Feed"
+  },
+  "original_filename": "security_agent.macho",
+  "stage_timestamps": {
+    "ingestion": "2026-10-05T07:32:25.044522+00:00",
+    "static": "2026-10-05T07:32:25.063953+00:00",
+    "intel": "2026-10-05T07:32:25.063953+00:00",
+    "report": "2026-10-05T07:32:26.672849+00:00"
+  },
+  "file_size_formatted": "36 B"
+}

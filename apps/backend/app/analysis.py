@@ -904,7 +904,11 @@ def _build_threat_assessment(
             key_findings.append(f"MalwareBazaar Threat Tags: {', '.join(tags)}")
         vendor_verdicts = malware_bazaar.get("vendor_verdicts") or []
         if vendor_verdicts:
-            key_findings.append(f"Threat Intel Vendor Detections: {', '.join(vendor_verdicts[:3])}")
+            formatted_vv = [
+                f"{v.get('vendor')}: {v.get('verdict')}" if isinstance(v, dict) else str(v)
+                for v in vendor_verdicts[:3]
+            ]
+            key_findings.append(f"Threat Intel Vendor Detections: {', '.join(formatted_vv)}")
 
         # Check for family classification disagreement (e.g. Mirai vs Mozi)
         if sig:

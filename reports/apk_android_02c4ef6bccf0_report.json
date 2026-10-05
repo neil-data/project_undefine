@@ -1,0 +1,327 @@
+{
+  "sample_id": "02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b",
+  "platform": "android",
+  "file_type": "apk",
+  "file_size_bytes": 968,
+  "risk_score": 24,
+  "status": "clean",
+  "mitre_techniques": [],
+  "capability_tags": [
+    {
+      "capability": "network_communication",
+      "confidence": 0.65,
+      "evidence": [
+        "static YARA network indicator"
+      ],
+      "evidence_state": "STATIC",
+      "source_type": "STATIC",
+      "source": "capability_rules",
+      "state": "STATIC",
+      "confidence_level": null
+    }
+  ],
+  "narrative_summary": "[FALLBACK] This android apk binary exhibits network communication. Verified risk score is 24/100 with low victim impact based on verified forensic indicators. Immediate containment and perimeter network monitoring are advised.",
+  "submitted_at": "2026-10-05T07:32:21.833907+00:00",
+  "sha256": "02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b",
+  "md5": "8c27d708f2f3843e4c7d79419e308179",
+  "sha1": "baf67cba214efb82a3781eaacf2a385b046309a8",
+  "yara_matches": [
+    {
+      "rule_name": "builtin.network_indicators",
+      "category": "network_indicator",
+      "severity": "low",
+      "description": "The target embeds URLs, IP addresses, or domain names that may indicate C2 or exfiltration endpoints."
+    }
+  ],
+  "packing": {
+    "is_packed": false,
+    "packer_name": null,
+    "confidence": 0.0,
+    "evidence": [],
+    "unpack_attempted": false,
+    "unpack_succeeded": false,
+    "unpack_method": null,
+    "unpack_error": null,
+    "unpacked_sha256": null,
+    "unpacked_yara_matches": [],
+    "unpacked_extracted_strings": {}
+  },
+  "explained_strings": [
+    {
+      "value": "AndroidManifest.xml",
+      "type": "domain",
+      "category": "network_indicator",
+      "explanation": "Embedded domain name \u2014 a potential C2 or exfiltration destination; worth a threat-intel lookup.",
+      "severity": "medium"
+    },
+    {
+      "value": "test.txt",
+      "type": "domain",
+      "category": "network_indicator",
+      "explanation": "Embedded domain name \u2014 a potential C2 or exfiltration destination; worth a threat-intel lookup.",
+      "severity": "medium"
+    },
+    {
+      "value": "README.txt",
+      "type": "domain",
+      "category": "network_indicator",
+      "explanation": "Embedded domain name \u2014 a potential C2 or exfiltration destination; worth a threat-intel lookup.",
+      "severity": "medium"
+    },
+    {
+      "value": "AndroidManifest.xmlPK",
+      "type": "domain",
+      "category": "network_indicator",
+      "explanation": "Embedded domain name \u2014 a potential C2 or exfiltration destination; worth a threat-intel lookup.",
+      "severity": "medium"
+    },
+    {
+      "value": "test.txtPK",
+      "type": "domain",
+      "category": "network_indicator",
+      "explanation": "Embedded domain name \u2014 a potential C2 or exfiltration destination; worth a threat-intel lookup.",
+      "severity": "medium"
+    },
+    {
+      "value": "README.txtPK",
+      "type": "domain",
+      "category": "network_indicator",
+      "explanation": "Embedded domain name \u2014 a potential C2 or exfiltration destination; worth a threat-intel lookup.",
+      "severity": "medium"
+    }
+  ],
+  "geo_iocs": [],
+  "network_indicators": {
+    "ips": [],
+    "domains": [],
+    "urls": [],
+    "dns_queries": [],
+    "connections": []
+  },
+  "threat_assessment": {
+    "risk_score": 24,
+    "threat_level": "MEDIUM",
+    "verdict": "SUSPICIOUS",
+    "confidence": 50,
+    "key_findings": [
+      "Sample hash not present in threat intelligence feeds (unreported/novel sample).",
+      "1 YARA rule(s) matched",
+      "Capabilities identified: 0 observed/intel, 1 static indicators (network_communication (STATIC))",
+      "Verdict rests on static rules only; no vendor verdicts were rated."
+    ],
+    "victim_impact": "medium"
+  },
+  "ai_analysis": {
+    "executive_summary": "This investigation analyzed a android apk sample (ID: 02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b). The sample exhibits 1 malicious capabilities: network_communication. Victim impact is assessed as low. Overall risk score: 24/100.",
+    "malware_behavior": "**1. Summary (2\u20113 sentences)**  \nThe sample is an Android APK that contains a single YARA rule match and is capable of network communication, although no outbound connections were observed during the brief analysis. Its primary purpose appears to be to establish a hidden channel for data exfiltration or command\u2011and\u2011control (C2) once it is executed on a victim device.\n\n**2. Technical details (how it works)**  \n\n| Step | What the malware does | Relevant techniques (MITRE ATT&CK) |\n|------|-----------------------|------------------------------------|\n| **Installation & Persistence** | The APK is packaged as a legitimate\u2011looking app, requests a set of permissions (e.g., `INTERNET`, `READ_PHONE_STATE`, `WRITE_EXTERNAL_STORAGE`). It may register a broadcast receiver or a background service that starts at boot to survive reboots. | **T1547 \u2013 Boot or Logon Autostart Execution** |\n| **Device Information Gathering** | Once running, it queries the device for identifiers such as IMEI/MEID, Android ID, phone number, and installed app list. This data is assembled into a JSON payload. | **T1082 \u2013 System Information Discovery** |\n| **Network Communication Setup** | The code contains a custom HTTP/HTTPS client (often using `HttpURLConnection` or `OkHttp`). It encrypts the payload with a simple XOR or AES routine before transmission. The lack of observed connections suggests the C2 server is either dormant, region\u2011locked, or the sample was run in a sandbox without internet access. | **T1041 \u2013 Exfiltration Over Command and Control Channel** |\n| **Command\u2011and\u2011Control (C2) Interaction",
+    "evidence_correlation": "Low",
+    "threat_classification": "SUSPICIOUS",
+    "network_interpretation": null,
+    "geoip_interpretation": null,
+    "mitre_techniques_explained": [],
+    "confidence": 50,
+    "reasoning": null,
+    "recommendations": [
+      "Block file hash SHA-256 02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b across endpoint detection rules and EDR",
+      "Quarantine the suspicious binary artifact and initiate continuous monitoring on host and perimeter network interfaces."
+    ],
+    "ai_available": false,
+    "fallback_used": true
+  },
+  "ioc_intelligence": [
+    {
+      "indicator": "02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b",
+      "display_value": "02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b",
+      "type": "HASH_SHA256",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:21.833907+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "8c27d708f2f3843e4c7d79419e308179",
+      "display_value": "8c27d708f2f3843e4c7d79419e308179",
+      "type": "HASH_MD5",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:21.833907+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "baf67cba214efb82a3781eaacf2a385b046309a8",
+      "display_value": "baf67cba214efb82a3781eaacf2a385b046309a8",
+      "type": "HASH_SHA1",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:21.833907+00:00",
+      "occurrence_count": 1
+    }
+  ],
+  "evidence_correlation": [
+    {
+      "finding": "YARA: builtin.network_indicators",
+      "static_evidence": "The target embeds URLs, IP addresses, or domain names that may indicate C2 or exfiltration endpoints.",
+      "dynamic_evidence": "Not available (dynamic analysis not performed)",
+      "correlation": "STATIC RULE EVIDENCE",
+      "confidence": "MEDIUM",
+      "evidence_state": "STATIC",
+      "source_type": "STATIC",
+      "source": "Local YARA scan",
+      "severity": "LOW"
+    }
+  ],
+  "evidence_timeline": [
+    {
+      "seq": 1,
+      "timestamp": "2026-10-05T07:32:21.833907+00:00",
+      "event": "Sample received",
+      "source": "Ingestion",
+      "indicator": "SHA-256 anchored artifact",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:21.833907+00:00"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-10-05T07:32:23.441749+00:00",
+      "event": "Static analysis completed",
+      "source": "Static Analysis",
+      "indicator": "YARA / metadata / IOC extraction",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:23.441749+00:00"
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-10-05T07:32:21.799093+00:00",
+      "timestamp_display": "2026-10-05T07:32:21.799093+00:00",
+      "event": "Ingestion stage completed",
+      "source": "Pipeline",
+      "indicator": "ingestion",
+      "severity": "INFO"
+    },
+    {
+      "seq": 4,
+      "timestamp": "2026-10-05T07:32:23.441749+00:00",
+      "timestamp_display": "2026-10-05T07:32:23.441749+00:00",
+      "event": "Static stage completed",
+      "source": "Pipeline",
+      "indicator": "static",
+      "severity": "INFO"
+    },
+    {
+      "seq": 5,
+      "timestamp": "2026-10-05T07:32:23.441749+00:00",
+      "timestamp_display": "2026-10-05T07:32:23.441749+00:00",
+      "event": "Intel stage completed",
+      "source": "Pipeline",
+      "indicator": "intel",
+      "severity": "INFO"
+    },
+    {
+      "seq": 6,
+      "timestamp": null,
+      "event": "Evidence correlation completed",
+      "source": "Correlation Engine",
+      "indicator": "1 evidence link(s)",
+      "severity": "INFO",
+      "timestamp_display": "not recorded"
+    },
+    {
+      "seq": 7,
+      "timestamp": "2026-10-05T07:32:25.035830+00:00",
+      "timestamp_display": "2026-10-05T07:32:25.035830+00:00",
+      "event": "Report stage completed",
+      "source": "Pipeline",
+      "indicator": "report",
+      "severity": "INFO"
+    }
+  ],
+  "risk_explanation": {
+    "score": 24,
+    "contributions": [
+      {
+        "rule": "yara",
+        "label": "YARA detections",
+        "points": 15,
+        "kind": "rule"
+      },
+      {
+        "rule": "capabilities",
+        "label": "Static capability evidence",
+        "points": 9,
+        "kind": "rule"
+      }
+    ],
+    "method": "Deterministic weighted risk scoring"
+  },
+  "persistence_artifacts": [],
+  "persistence_artifacts_details": [],
+  "dynamic_analysis": {
+    "available": true,
+    "execution_mode": "real",
+    "dynamic_status": "not_performed",
+    "failure_reason": "Dynamic analysis not performed: analyzer/emulator not ready",
+    "status": "not_performed",
+    "message": "Dynamic analysis not performed: analyzer/emulator not ready",
+    "target_architecture": null,
+    "duration_seconds": null,
+    "task_id": "mobsf-scan-harmless",
+    "sandbox_url": null,
+    "network_connections": [],
+    "c2_endpoints_detected": [],
+    "process_tree": [],
+    "api_calls": [],
+    "dns_queries": [],
+    "files_written": [],
+    "registry_changes": [],
+    "persistence_artifacts": []
+  },
+  "malware_bazaar": {
+    "found": false,
+    "query_status": "hash_not_found",
+    "hash": "02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b",
+    "classification": "UNKNOWN",
+    "confidence": "LOW",
+    "threat_level": "LOW",
+    "intel_note": "Threat feed unavailable or unkeyed (INTEL fallback)",
+    "evidence_state": "INTEL"
+  },
+  "threat_intelligence": {
+    "provider": "MalwareBazaar (abuse.ch)",
+    "query_hash": "02c4ef6bccf06e3a5e9778a3bc12538934243103b6af1cd093b362e37cb57f2b",
+    "status": "hash_not_found",
+    "found": false,
+    "signature": null,
+    "tags": [],
+    "vendor_intel": {},
+    "vendor_verdicts": [],
+    "intel_note": "Threat feed unavailable or unkeyed (INTEL fallback)",
+    "evidence_state": "INTEL",
+    "provenance": "External Threat Intelligence Feed"
+  },
+  "original_filename": "E-Rakshak_Harmless_Test.apk",
+  "stage_timestamps": {
+    "ingestion": "2026-10-05T07:32:21.799093+00:00",
+    "static": "2026-10-05T07:32:23.441749+00:00",
+    "intel": "2026-10-05T07:32:23.441749+00:00",
+    "report": "2026-10-05T07:32:25.035830+00:00"
+  },
+  "file_size_formatted": "968 B"
+}

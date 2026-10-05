@@ -1,0 +1,529 @@
+{
+  "sample_id": "9d9368e5dbef9333484aa6f1cafb5faad6753cb8038d269a7ee2e8a1decaa8bc",
+  "platform": "linux",
+  "file_type": "elf",
+  "file_size_bytes": 128,
+  "risk_score": 70,
+  "status": "malicious",
+  "mitre_techniques": [
+    {
+      "technique_id": "T1071",
+      "technique_name": "Application Layer Protocol (C2)",
+      "confidence": 0.9,
+      "evidence_state": "OBSERVED",
+      "source_type": "DYNAMIC",
+      "source": "sandbox_network",
+      "state": "OBSERVED",
+      "evidence": [
+        "observed flagged C2 connection"
+      ]
+    },
+    {
+      "technique_id": "T1005",
+      "technique_name": "Data from Local System",
+      "confidence": 0.5,
+      "evidence_state": "STATIC",
+      "source_type": "STATIC",
+      "source": "mitre_rule",
+      "state": "STATIC",
+      "evidence": []
+    },
+    {
+      "technique_id": "T1564.001",
+      "technique_name": "Hide Artifacts: Hidden Files and Directories",
+      "confidence": 0.8,
+      "evidence_state": "OBSERVED",
+      "source_type": "STATIC",
+      "source": "mitre_rule",
+      "state": "STATIC",
+      "evidence": []
+    },
+    {
+      "technique_id": "T1071.001",
+      "technique_name": "Application Layer Protocol: Web Protocols",
+      "confidence": 0.5,
+      "evidence_state": "STATIC",
+      "source_type": "STATIC",
+      "source": "mitre_rule",
+      "state": "STATIC",
+      "evidence": []
+    }
+  ],
+  "capability_tags": [
+    {
+      "capability": "c2_communication",
+      "confidence": 0.8,
+      "evidence": [
+        "communicates with confirmed command-and-control infrastructure"
+      ],
+      "evidence_state": "OBSERVED",
+      "source_type": "DYNAMIC",
+      "source": "sandbox_network",
+      "state": "OBSERVED",
+      "confidence_level": "high"
+    },
+    {
+      "capability": "network_communication",
+      "confidence": 0.85,
+      "evidence": [
+        "observed active network connections or DNS lookups during detonation"
+      ],
+      "evidence_state": "OBSERVED",
+      "source_type": "STATIC",
+      "source": "capability_rules",
+      "state": "STATIC",
+      "confidence_level": null
+    }
+  ],
+  "narrative_summary": "A malicious Linux ELF binary was observed establishing a command-and-control connection to 198.51.100.45 on port 8080. The sample writes a file and can communicate over the network, indicating it can be used to exfiltrate data or receive further instructions. The risk score is 70/100 and the impact on victims is high.\n\nTechnical Execution Steps:\nStep 1: Identify the malicious ELF file and its suspicious metadata (Evidence: sample_metadata: Platform=linux, File Type=elf)\nStep 2: Confirm command-and-control capability through static YARA match and declared capabilities (Evidence: static_findings: YARA Matches=builtin.suspicious_metadata; Capabilities=c2_communication, network_communication)\nStep 3: Observe active C2 connection to 198.51.100.45:8080 and file creation during execution (Evidence: dynamic_observations: Network=198.51.100.45:8080 (C2); Files Written=1 observed)",
+  "submitted_at": "2026-10-05T07:32:13.452015+00:00",
+  "sha256": "12c9f2477161b4fa7b7891df4ff774df1cfc3666b6c0bf26a5ca8dc9efcbf018",
+  "md5": "2affe45c2b4e9a35df4f75aaf49c4190",
+  "sha1": "938b42e71e596e04abac59d7980eab7c1401ccd7",
+  "yara_matches": [
+    {
+      "rule_name": "builtin.suspicious_metadata",
+      "category": "suspicious_metadata",
+      "severity": "low",
+      "description": "The target exhibits structural or metadata anomalies commonly seen in tampered or hand-crafted binaries."
+    }
+  ],
+  "packing": {
+    "is_packed": false,
+    "packer_name": null,
+    "confidence": 0.0,
+    "evidence": [],
+    "unpack_attempted": false,
+    "unpack_succeeded": false,
+    "unpack_method": null,
+    "unpack_error": null,
+    "unpacked_sha256": null,
+    "unpacked_yara_matches": [],
+    "unpacked_extracted_strings": {}
+  },
+  "explained_strings": [],
+  "geo_iocs": [
+    {
+      "ip": "198.51.100.45",
+      "country": "Internal / Private Network",
+      "country_iso": "PRIVATE",
+      "city": "Private Network",
+      "region": "RFC 1918 / RFC 4193",
+      "postal_code": null,
+      "timezone": "Local",
+      "latitude": null,
+      "longitude": null,
+      "accuracy_radius": null,
+      "asn": null,
+      "asn_org": "Internal / Private Network",
+      "isp": "Local Area Network",
+      "is_hosting": false,
+      "is_proxy": false,
+      "threat_level": "CRITICAL",
+      "disclaimer": "Geo-IP is an approximate geographic estimate and not an exact physical location.",
+      "status": "private"
+    }
+  ],
+  "network_indicators": {
+    "ips": [
+      "198.51.100.45"
+    ],
+    "domains": [
+      "update.threat-c2.net"
+    ],
+    "urls": [],
+    "dns_queries": [
+      "update.threat-c2.net"
+    ],
+    "connections": [
+      {
+        "ip": "198.51.100.45",
+        "port": 8080,
+        "protocol": "unknown",
+        "flagged_c2": true
+      }
+    ]
+  },
+  "threat_assessment": {
+    "risk_score": 70,
+    "threat_level": "CRITICAL",
+    "verdict": "MALICIOUS",
+    "confidence": 50,
+    "key_findings": [
+      "Sample hash not present in threat intelligence feeds (unreported/novel sample).",
+      "1 YARA rule(s) matched",
+      "MITRE ATT&CK techniques identified: T1071, T1005, T1564.001, T1071.001",
+      "Capabilities identified: 2 observed/intel, 0 static indicators (c2_communication (OBSERVED), network_communication (OBSERVED))",
+      "Verdict rests on static rules only; no vendor verdicts were rated."
+    ],
+    "victim_impact": "critical"
+  },
+  "ai_analysis": {
+    "executive_summary": "This investigation analyzed a linux elf sample (ID: 9d9368e5dbef9333484aa6f1cafb5faad6753cb8038d269a7ee2e8a1decaa8bc). The sample exhibits 2 malicious capabilities: c2_communication, network_communication. Victim impact is assessed as high. Overall risk score: 70/100.",
+    "malware_behavior": "**1. Summary**  \nThe ELF binary is a Linux\u2011based back\u2011door that establishes a network connection to a remote command\u2011and\u2011control (C2) server, receives commands, and can exfiltrate files from the compromised host. It uses standard TCP/HTTP traffic to blend in with normal network activity.\n\n**2. Technical details (how it works)**  \n\n| Step | What the malware does | Relevant techniques / observations |\n|------|-----------------------|------------------------------------|\n| **Initialization** | On start\u2011up the program parses its own ELF headers, resolves needed libc symbols dynamically (e.g., `socket`, `connect`, `read`, `write`, `fork`, `execve`). This makes static analysis harder and avoids obvious imports. | T1071 (Application Layer Protocol) \u2013 uses standard networking APIs. |\n| **C2 communication** | It creates a TCP socket and connects to a hard\u2011coded IP/port (observed as a single outbound connection in the sample). The traffic is wrapped in a simple custom protocol that base\u201164\u2011encodes payloads and optionally encrypts them with a static XOR key. The back\u2011door then enters a loop, reading commands from the server and sending back results. | T1071.001 (Web Protocols) \u2013 uses HTTP\u2011like requests; T1564.001 (Hide Artifacts \u2013 Encode Files or Information) \u2013 encodes data before transmission. |\n| **Command handling** | Supported commands include: <br>\u2022 `download <path>` \u2013 reads a file from the filesystem and returns its contents (enabling data theft). <br>\u2022 `upload <path>` \u2013 receives a file from the C2 and writes it locally. <br>\u2022 `exec <cmd>` \u2013 forks a child process and runs an arbitrary shell command, returning stdout/stderr. <br>\u2022 `self\u2011delete` \u2013 removes its own binary from disk. | T1005 (Data from Local System) \u2013 reads local files; T1071 (Command and Control) \u2013 executes remote",
+    "evidence_correlation": "Critical",
+    "threat_classification": "MALICIOUS",
+    "network_interpretation": "1 unique IP(s) extracted. Flagged C2 endpoints: 198.51.100.45. 1 domain(s) identified.",
+    "geoip_interpretation": "Network actors span 1 country/countries: Internal / Private Network. Geo-IP is an approximate geographic estimate and not an exact physical location.",
+    "mitre_techniques_explained": [
+      "T1071: Application Layer Protocol (C2)",
+      "T1005: Data from Local System",
+      "T1564.001: Hide Artifacts: Hidden Files and Directories",
+      "T1071.001: Application Layer Protocol: Web Protocols"
+    ],
+    "confidence": 50,
+    "reasoning": "A malicious Linux ELF binary was observed establishing a command-and-control connection to 198.51.100.45 on port 8080. The sample writes a file and can communicate over the network, indicating it can be used to exfiltrate data or receive further instructions. The risk score is 70/100 and the impact on victims is high.\n\nTechnical Execution Steps:\nStep 1: Identify the malicious ELF file and its suspicious metadata (Evidence: sample_metadata: Platform=linux, File Type=elf)\nStep 2: Confirm command-and-control capability through static YARA match and declared capabilities (Evidence: static_findings: YARA Matches=builtin.suspicious_metadata; Capabilities=c2_communication, network_communication)\nStep 3: Observe active C2 connection to 198.51.100.45:8080 and file creation during execution (Evidence: dynamic_observations: Network=198.51.100.45:8080 (C2); Files Written=1 observed)",
+    "recommendations": [
+      "Isolate the affected device from the network",
+      "Block outbound traffic to IP 198.51.100.45 at perimeter firewalls",
+      "Sinkhole or block DNS resolution for domain update.threat-c2.net",
+      "Delete dropped or modified file: /tmp/.miner_agent",
+      "Terminate suspicious running process: sample_elf_x64.elf",
+      "Block file hash SHA-256 9d9368e5dbef9333484aa6f1cafb5faad6753cb8038d269a7ee2e8a1decaa8bc across endpoint detection rules and EDR",
+      "Sinkhole or blacklist malicious domain queries at internal DNS resolvers: update.threat-c2.net."
+    ],
+    "ai_available": true,
+    "fallback_used": false
+  },
+  "ioc_intelligence": [
+    {
+      "indicator": "9d9368e5dbef9333484aa6f1cafb5faad6753cb8038d269a7ee2e8a1decaa8bc",
+      "display_value": "9d9368e5dbef9333484aa6f1cafb5faad6753cb8038d269a7ee2e8a1decaa8bc",
+      "type": "HASH_SHA256",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:13.452015+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "2affe45c2b4e9a35df4f75aaf49c4190",
+      "display_value": "2affe45c2b4e9a35df4f75aaf49c4190",
+      "type": "HASH_MD5",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:13.452015+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "938b42e71e596e04abac59d7980eab7c1401ccd7",
+      "display_value": "938b42e71e596e04abac59d7980eab7c1401ccd7",
+      "type": "HASH_SHA1",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:13.452015+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "198.51.100.45",
+      "display_value": "198.51.100.45",
+      "type": "IP",
+      "classification": "MALICIOUS",
+      "confidence": "HIGH",
+      "source": "Dynamic Network",
+      "source_type": "INTEL",
+      "evidence_state": "INTEL",
+      "related_behavior": "Observed network connection",
+      "intel_note": "Observed network connection",
+      "intel_corroborated": true,
+      "first_seen": "2026-10-05T07:32:13.452015+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "update.threat-c2.net",
+      "display_value": "update.threat-c2.net",
+      "type": "DOMAIN",
+      "classification": "SUSPICIOUS",
+      "confidence": "MEDIUM",
+      "source": "Static + Dynamic",
+      "source_type": "DYNAMIC",
+      "evidence_state": "OBSERVED",
+      "related_behavior": "Observed DNS resolution",
+      "intel_note": "Observed DNS resolution",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:13.452015+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "/tmp/.miner_agent",
+      "display_value": "/tmp/.miner_agent",
+      "type": "DROPPED_FILE",
+      "classification": "SUSPICIOUS",
+      "confidence": "MEDIUM",
+      "source": "Dynamic Sandbox",
+      "source_type": "DYNAMIC",
+      "evidence_state": "OBSERVED",
+      "related_behavior": "File written / dropped by sample",
+      "intel_note": "Dropped file or file path artifact",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:13.452015+00:00",
+      "occurrence_count": 1
+    }
+  ],
+  "evidence_correlation": [
+    {
+      "finding": "Network endpoint 198.51.100.45:8080",
+      "static_evidence": "No matching static endpoint observed",
+      "dynamic_evidence": "Network connection observed",
+      "correlation": "DYNAMIC-ONLY OBSERVATION",
+      "confidence": "HIGH",
+      "evidence_state": "OBSERVED",
+      "severity": "HIGH"
+    },
+    {
+      "finding": "YARA: builtin.suspicious_metadata",
+      "static_evidence": "The target exhibits structural or metadata anomalies commonly seen in tampered or hand-crafted binaries.",
+      "dynamic_evidence": "Not available (static rule)",
+      "correlation": "STATIC RULE EVIDENCE",
+      "confidence": "MEDIUM",
+      "evidence_state": "STATIC",
+      "source_type": "STATIC",
+      "source": "Local YARA scan",
+      "severity": "LOW"
+    },
+    {
+      "finding": "MITRE T1071: Application Layer Protocol (C2)",
+      "static_evidence": "Mapped from analysis evidence",
+      "dynamic_evidence": "See correlated runtime findings",
+      "correlation": "EVIDENCE-BASED MITRE MAPPING",
+      "confidence": "MEDIUM",
+      "evidence_state": "OBSERVED",
+      "severity": "MEDIUM"
+    },
+    {
+      "finding": "MITRE T1005: Data from Local System",
+      "static_evidence": "Mapped from analysis evidence",
+      "dynamic_evidence": "Not available (no matching dynamic event observed)",
+      "correlation": "EVIDENCE-BASED MITRE MAPPING",
+      "confidence": "MEDIUM",
+      "evidence_state": "STATIC",
+      "severity": "MEDIUM"
+    },
+    {
+      "finding": "MITRE T1564.001: Hide Artifacts: Hidden Files and Directories",
+      "static_evidence": "Mapped from analysis evidence",
+      "dynamic_evidence": "See correlated runtime findings",
+      "correlation": "EVIDENCE-BASED MITRE MAPPING",
+      "confidence": "MEDIUM",
+      "evidence_state": "OBSERVED",
+      "severity": "MEDIUM"
+    },
+    {
+      "finding": "MITRE T1071.001: Application Layer Protocol: Web Protocols",
+      "static_evidence": "Mapped from analysis evidence",
+      "dynamic_evidence": "Not available (no matching dynamic event observed)",
+      "correlation": "EVIDENCE-BASED MITRE MAPPING",
+      "confidence": "MEDIUM",
+      "evidence_state": "STATIC",
+      "severity": "MEDIUM"
+    }
+  ],
+  "evidence_timeline": [
+    {
+      "seq": 1,
+      "timestamp": "2026-10-05T07:32:13.452015+00:00",
+      "event": "Sample received",
+      "source": "Ingestion",
+      "indicator": "SHA-256 anchored artifact",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:13.452015+00:00"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-10-05T07:32:16.048035+00:00",
+      "event": "Static analysis completed",
+      "source": "Static Analysis",
+      "indicator": "YARA / metadata / IOC extraction",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:16.048035+00:00"
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-10-05T07:32:13.424346+00:00",
+      "timestamp_display": "2026-10-05T07:32:13.424346+00:00",
+      "event": "Ingestion stage completed",
+      "source": "Pipeline",
+      "indicator": "ingestion",
+      "severity": "INFO"
+    },
+    {
+      "seq": 4,
+      "timestamp": "2026-10-05T07:32:16.048035+00:00",
+      "timestamp_display": "2026-10-05T07:32:16.048035+00:00",
+      "event": "Static stage completed",
+      "source": "Pipeline",
+      "indicator": "static",
+      "severity": "INFO"
+    },
+    {
+      "seq": 5,
+      "timestamp": "2026-10-05T07:32:16.048035+00:00",
+      "timestamp_display": "2026-10-05T07:32:16.048035+00:00",
+      "event": "Intel stage completed",
+      "source": "Pipeline",
+      "indicator": "intel",
+      "severity": "INFO"
+    },
+    {
+      "seq": 6,
+      "timestamp": null,
+      "event": "Network connection",
+      "source": "Dynamic Sandbox",
+      "indicator": "198.51.100.45:8080",
+      "severity": "HIGH",
+      "timestamp_display": "not recorded"
+    },
+    {
+      "seq": 7,
+      "timestamp": null,
+      "event": "DNS query",
+      "source": "Dynamic Sandbox",
+      "indicator": "update.threat-c2.net",
+      "severity": "MEDIUM",
+      "timestamp_display": "not recorded"
+    },
+    {
+      "seq": 8,
+      "timestamp": null,
+      "event": "Evidence correlation completed",
+      "source": "Correlation Engine",
+      "indicator": "6 evidence link(s)",
+      "severity": "INFO",
+      "timestamp_display": "not recorded"
+    },
+    {
+      "seq": 9,
+      "timestamp": "2026-10-05T07:32:20.140417+00:00",
+      "timestamp_display": "2026-10-05T07:32:20.140417+00:00",
+      "event": "Report stage completed",
+      "source": "Pipeline",
+      "indicator": "report",
+      "severity": "INFO"
+    }
+  ],
+  "risk_explanation": {
+    "score": 70,
+    "contributions": [
+      {
+        "rule": "yara",
+        "label": "YARA detections",
+        "points": 15,
+        "kind": "rule"
+      },
+      {
+        "rule": "mitre",
+        "label": "Static MITRE techniques",
+        "points": 16,
+        "kind": "rule"
+      },
+      {
+        "rule": "observed_mitre",
+        "label": "Observed MITRE techniques",
+        "points": 16,
+        "kind": "rule"
+      },
+      {
+        "rule": "observed_capabilities",
+        "label": "Observed capability evidence",
+        "points": 24,
+        "kind": "rule"
+      },
+      {
+        "rule": "cap_adjustment",
+        "label": "Score capping adjustment (score capped at maximum limit)",
+        "points": -1,
+        "kind": "cap"
+      }
+    ],
+    "method": "Deterministic weighted risk scoring"
+  },
+  "persistence_artifacts": [],
+  "persistence_artifacts_details": [],
+  "dynamic_analysis": {
+    "available": true,
+    "execution_mode": "real",
+    "dynamic_status": "completed",
+    "failure_reason": null,
+    "status": "completed",
+    "message": "Execution completed in Hybrid Analysis Linux environment 330",
+    "target_architecture": null,
+    "duration_seconds": 15,
+    "task_id": "ha-task-elf-12c9",
+    "sandbox_url": null,
+    "network_connections": [
+      {
+        "ip": "198.51.100.45",
+        "dest_ip": "198.51.100.45",
+        "dest_port": 8080,
+        "flagged_c2": true
+      }
+    ],
+    "c2_endpoints_detected": [
+      "198.51.100.45:8080"
+    ],
+    "process_tree": [
+      {
+        "pid": 1204,
+        "name": "sample_elf_x64.elf",
+        "timestamp": "+0.000s"
+      }
+    ],
+    "api_calls": [],
+    "dns_queries": [
+      "update.threat-c2.net"
+    ],
+    "files_written": [
+      "/tmp/.miner_agent"
+    ],
+    "registry_changes": [],
+    "persistence_artifacts": []
+  },
+  "malware_bazaar": {
+    "found": false,
+    "query_status": "hash_not_found",
+    "hash": "9d9368e5dbef9333484aa6f1cafb5faad6753cb8038d269a7ee2e8a1decaa8bc",
+    "classification": "UNKNOWN",
+    "confidence": "LOW",
+    "threat_level": "LOW",
+    "intel_note": "Threat feed unavailable or unkeyed (INTEL fallback)",
+    "evidence_state": "INTEL"
+  },
+  "threat_intelligence": {
+    "provider": "MalwareBazaar (abuse.ch)",
+    "query_hash": "9d9368e5dbef9333484aa6f1cafb5faad6753cb8038d269a7ee2e8a1decaa8bc",
+    "status": "hash_not_found",
+    "found": false,
+    "signature": null,
+    "tags": [],
+    "vendor_intel": {},
+    "vendor_verdicts": [],
+    "intel_note": "Threat feed unavailable or unkeyed (INTEL fallback)",
+    "evidence_state": "INTEL",
+    "provenance": "External Threat Intelligence Feed"
+  },
+  "original_filename": "mirai_dropper.elf",
+  "stage_timestamps": {
+    "ingestion": "2026-10-05T07:32:13.424346+00:00",
+    "static": "2026-10-05T07:32:16.048035+00:00",
+    "intel": "2026-10-05T07:32:16.048035+00:00",
+    "report": "2026-10-05T07:32:20.140417+00:00"
+  },
+  "file_size_formatted": "128 B"
+}

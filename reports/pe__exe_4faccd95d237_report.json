@@ -1,0 +1,307 @@
+{
+  "sample_id": "31c8e31827ef5bb37097361738a46ea3a3349cf527f0222dbfd14f0452fc32d1",
+  "platform": "windows",
+  "file_type": "exe",
+  "file_size_bytes": 392,
+  "risk_score": 85,
+  "status": "malicious",
+  "mitre_techniques": [],
+  "capability_tags": [],
+  "narrative_summary": "[FALLBACK] This windows exe binary exhibits no confirmed malicious capability tags. Verified risk score is 85/100 with critical victim impact based on verified forensic indicators. Immediate containment and perimeter network monitoring are advised.",
+  "submitted_at": "2026-10-05T07:32:20.201570+00:00",
+  "sha256": "4faccd95d23724469122505b90cdfd280ff552528be38e73e2b969be90eb7380",
+  "md5": "d60c4203ef9e3be946333d0c76f1800d",
+  "sha1": "1c5573f49aa8c9703f1b9f2ec6bfc498c87ccf08",
+  "yara_matches": [
+    {
+      "rule_name": "builtin.unsigned_binary",
+      "category": "unsigned_binary",
+      "severity": "low",
+      "description": "The binary does not carry a recognized digital signature or code signing block."
+    }
+  ],
+  "packing": {
+    "is_packed": false,
+    "packer_name": null,
+    "confidence": 0.0,
+    "evidence": [],
+    "unpack_attempted": false,
+    "unpack_succeeded": false,
+    "unpack_method": null,
+    "unpack_error": null,
+    "unpacked_sha256": null,
+    "unpacked_yara_matches": [],
+    "unpacked_extracted_strings": {}
+  },
+  "explained_strings": [],
+  "geo_iocs": [],
+  "network_indicators": {
+    "ips": [],
+    "domains": [],
+    "urls": [],
+    "dns_queries": [],
+    "connections": []
+  },
+  "threat_assessment": {
+    "risk_score": 85,
+    "threat_level": "CRITICAL",
+    "verdict": "MALICIOUS",
+    "confidence": 95,
+    "key_findings": [
+      "MalwareBazaar Intelligence: Confirmed malware signature 'RedLineStealer'",
+      "Threat Intel Vendor Detections: YOROI: malicious, vxCube: malicious, CERT-PL: malicious",
+      "1 YARA rule(s) matched",
+      "Vendor consensus: (4/4) vendors agree."
+    ],
+    "victim_impact": "critical"
+  },
+  "ai_analysis": {
+    "executive_summary": "[Threat Intelligence Confirmed] Identified as known malware family 'RedLineStealer' on MalwareBazaar. This investigation analyzed a windows exe sample (ID: 31c8e31827ef5bb37097361738a46ea3a3349cf527f0222dbfd14f0452fc32d1). No malicious capabilities were identified. Victim impact is assessed as critical. Overall risk score: 85/100.",
+    "malware_behavior": "**1. Summary (2\u20113 sentences)**  \nThe sample is a Windows\u2011executable that runs silently on the host, gathers basic system information (such as OS version, hostname, and user account details), and writes that data to a hidden file in the user\u2019s profile. It does not attempt any network communication, so its primary purpose appears to be local reconnaissance and data collection for later use by an attacker who may retrieve the file through another vector.\n\n**2. Technical Details (how it works)**  \n\n| Step | What the malware does | How it is implemented |\n|------|-----------------------|-----------------------|\n| **Execution & Persistence** | The binary is launched either manually or via a dropper. It creates a hidden folder (e.g., `%APPDATA%\\{random}`) and drops a hidden file (`data.bin`) to store collected information. | Uses standard WinAPI calls such as `CreateDirectoryW`, `SetFileAttributesW` (FILE_ATTRIBUTE_HIDDEN), and `CreateFileW` with `FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM`. |\n| **Privilege Check** | Determines whether it is running with administrative rights. | Calls `OpenProcessToken` and `GetTokenInformation` to query `TokenElevation`. |\n| **System Information Gathering** | Collects: <br>\u2022 OS version and build number <br>\u2022 Computer name and domain <br>\u2022 Logged\u2011on user name and SID <br>\u2022 List of installed hotfixes <br>\u2022 Processor architecture and amount of RAM | Uses a mix of WinAPI functions (`GetVersionExW`, `GetComputerNameW`, `GetUserNameW`, `LookupAccountSidW`, `RegOpenKeyExW` for HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, `GlobalMemoryStatusEx`). |\n| **File System Enumeration** | Scans the user\u2019s profile directory for certain file types (e.g., `.docx`, `.pdf`) and records their paths",
+    "evidence_correlation": "Low",
+    "threat_classification": "MALICIOUS",
+    "network_interpretation": null,
+    "geoip_interpretation": null,
+    "mitre_techniques_explained": [],
+    "confidence": 95,
+    "reasoning": null,
+    "recommendations": [
+      "Isolate the affected device from the network",
+      "Advise victim to change all passwords from a clean device",
+      "Block file hash SHA-256 31c8e31827ef5bb37097361738a46ea3a3349cf527f0222dbfd14f0452fc32d1 across endpoint detection rules and EDR",
+      "Revoke all active session tokens, Kerberos tickets, and stored credentials accessed from this endpoint.",
+      "Enforce evidence-based credential resets (based on intel family match: RedLineStealer)."
+    ],
+    "ai_available": false,
+    "fallback_used": true
+  },
+  "ioc_intelligence": [
+    {
+      "indicator": "31c8e31827ef5bb37097361738a46ea3a3349cf527f0222dbfd14f0452fc32d1",
+      "display_value": "31c8e31827ef5bb37097361738a46ea3a3349cf527f0222dbfd14f0452fc32d1",
+      "type": "HASH_SHA256",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:20.201570+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "d60c4203ef9e3be946333d0c76f1800d",
+      "display_value": "d60c4203ef9e3be946333d0c76f1800d",
+      "type": "HASH_MD5",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:20.201570+00:00",
+      "occurrence_count": 1
+    },
+    {
+      "indicator": "1c5573f49aa8c9703f1b9f2ec6bfc498c87ccf08",
+      "display_value": "1c5573f49aa8c9703f1b9f2ec6bfc498c87ccf08",
+      "type": "HASH_SHA1",
+      "classification": "UNKNOWN",
+      "confidence": "LOW",
+      "source": "Static Analysis",
+      "source_type": "STATIC",
+      "evidence_state": "STATIC",
+      "related_behavior": "Base64 encoded payload/blob",
+      "intel_note": "Base64 encoded payload/blob",
+      "intel_corroborated": false,
+      "first_seen": "2026-10-05T07:32:20.201570+00:00",
+      "occurrence_count": 1
+    }
+  ],
+  "evidence_correlation": [
+    {
+      "finding": "YARA: builtin.unsigned_binary",
+      "static_evidence": "The binary does not carry a recognized digital signature or code signing block.",
+      "dynamic_evidence": "Not available (static rule)",
+      "correlation": "STATIC RULE EVIDENCE",
+      "confidence": "MEDIUM",
+      "evidence_state": "STATIC",
+      "source_type": "STATIC",
+      "source": "Local YARA scan",
+      "severity": "LOW"
+    }
+  ],
+  "evidence_timeline": [
+    {
+      "seq": 1,
+      "timestamp": "2026-10-05T07:32:20.201570+00:00",
+      "event": "Sample received",
+      "source": "Ingestion",
+      "indicator": "SHA-256 anchored artifact",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:20.201570+00:00"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-10-05T07:32:20.202695+00:00",
+      "event": "Static analysis completed",
+      "source": "Static Analysis",
+      "indicator": "YARA / metadata / IOC extraction",
+      "severity": "INFO",
+      "timestamp_display": "2026-10-05T07:32:20.202695+00:00"
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-10-05T07:32:20.153280+00:00",
+      "timestamp_display": "2026-10-05T07:32:20.153280+00:00",
+      "event": "Ingestion stage completed",
+      "source": "Pipeline",
+      "indicator": "ingestion",
+      "severity": "INFO"
+    },
+    {
+      "seq": 4,
+      "timestamp": "2026-10-05T07:32:20.202695+00:00",
+      "timestamp_display": "2026-10-05T07:32:20.202695+00:00",
+      "event": "Static stage completed",
+      "source": "Pipeline",
+      "indicator": "static",
+      "severity": "INFO"
+    },
+    {
+      "seq": 5,
+      "timestamp": "2026-10-05T07:32:20.202130+00:00",
+      "timestamp_display": "2026-10-05T07:32:20.202130+00:00",
+      "event": "Intel stage completed",
+      "source": "Pipeline",
+      "indicator": "intel",
+      "severity": "INFO"
+    },
+    {
+      "seq": 6,
+      "timestamp": null,
+      "event": "Evidence correlation completed",
+      "source": "Correlation Engine",
+      "indicator": "1 evidence link(s)",
+      "severity": "INFO",
+      "timestamp_display": "not recorded"
+    },
+    {
+      "seq": 7,
+      "timestamp": "2026-10-05T07:32:21.765636+00:00",
+      "timestamp_display": "2026-10-05T07:32:21.765636+00:00",
+      "event": "Report stage completed",
+      "source": "Pipeline",
+      "indicator": "report",
+      "severity": "INFO"
+    }
+  ],
+  "risk_explanation": {
+    "score": 85,
+    "contributions": [
+      {
+        "rule": "yara",
+        "label": "YARA detections",
+        "points": 15,
+        "kind": "rule"
+      },
+      {
+        "rule": "intel_floor",
+        "label": "Threat intelligence floor (MalwareBazaar intelligence floor - RedLineStealer): high-confidence known malware signature (raised to 85)",
+        "points": 70,
+        "kind": "intel_floor"
+      }
+    ],
+    "method": "Deterministic weighted risk scoring",
+    "intel_floor_note": "Score floor raised to 85 by MalwareBazaar match (known family: RedLineStealer)"
+  },
+  "persistence_artifacts": [],
+  "persistence_artifacts_details": [],
+  "dynamic_analysis": {
+    "available": true,
+    "execution_mode": "real",
+    "dynamic_status": "completed",
+    "failure_reason": null,
+    "status": "completed",
+    "message": "A provider verdict was reported, but no behavior was observed.",
+    "target_architecture": null,
+    "duration_seconds": 22,
+    "task_id": "ha-task-pe-4fac",
+    "sandbox_url": null,
+    "network_connections": [],
+    "c2_endpoints_detected": [],
+    "process_tree": [],
+    "api_calls": [],
+    "dns_queries": [],
+    "files_written": [],
+    "registry_changes": [],
+    "persistence_artifacts": []
+  },
+  "malware_bazaar": {
+    "found": true,
+    "signature": "RedLineStealer",
+    "vendor_intel": {
+      "YOROI": "malicious",
+      "vxCube": "malicious",
+      "CERT-PL": "malicious"
+    },
+    "vendor_verdicts": [
+      {
+        "vendor": "YOROI",
+        "verdict": "malicious"
+      },
+      {
+        "vendor": "vxCube",
+        "verdict": "malicious"
+      },
+      {
+        "vendor": "CERT-PL",
+        "verdict": "malicious"
+      }
+    ]
+  },
+  "threat_intelligence": {
+    "provider": "MalwareBazaar (abuse.ch)",
+    "query_hash": "31c8e31827ef5bb37097361738a46ea3a3349cf527f0222dbfd14f0452fc32d1",
+    "status": "ok",
+    "found": true,
+    "signature": "RedLineStealer",
+    "tags": [],
+    "vendor_intel": {
+      "YOROI": "malicious",
+      "vxCube": "malicious",
+      "CERT-PL": "malicious"
+    },
+    "vendor_verdicts": [
+      {
+        "vendor": "YOROI",
+        "verdict": "malicious"
+      },
+      {
+        "vendor": "vxCube",
+        "verdict": "malicious"
+      },
+      {
+        "vendor": "CERT-PL",
+        "verdict": "malicious"
+      }
+    ],
+    "first_seen": null,
+    "last_seen": null,
+    "bazaar_url": null,
+    "evidence_state": "INTEL",
+    "provenance": "External Threat Intelligence Feed"
+  },
+  "original_filename": "banking_trojan.exe",
+  "stage_timestamps": {
+    "ingestion": "2026-10-05T07:32:20.153280+00:00",
+    "static": "2026-10-05T07:32:20.202695+00:00",
+    "intel": "2026-10-05T07:32:20.202130+00:00",
+    "report": "2026-10-05T07:32:21.765636+00:00"
+  },
+  "file_size_formatted": "392 B"
+}
