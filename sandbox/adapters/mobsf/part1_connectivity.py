@@ -10,6 +10,12 @@ plus the connectivity/auth check.
 import os
 import requests
 
+try:
+    from packages.config import load_config
+    load_config()
+except Exception:
+    pass
+
 MOBSF_URL = os.environ.get("MOBSF_URL", "http://localhost:8000")
 MOBSF_API_KEY = os.environ.get("MOBSF_API_KEY", "")
 HEADERS = {

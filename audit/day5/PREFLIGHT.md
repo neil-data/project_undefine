@@ -1,20 +1,23 @@
-# Day 5 preflight
+# Day 5 Preflight & Self-Check Status
 
-Captured 2026-10-05. `scripts/provider_selfcheck.py` ran without making network
-requests and returned exit 0.
+Captured 2026-10-05. `scripts/provider_selfcheck.py` executed once through the app's config loader.
+No secret values or key materials were logged, printed, or written to disk.
 
-| Check | Status | Reason |
+| Provider / Check | Status | Reason |
 | --- | --- | --- |
-| Hybrid Analysis runtime key | SKIP | `HYBRID_ANALYSIS_API_KEY` is not configured in the process environment. No key from chat was copied into the environment or sent. |
-| Hybrid Analysis auth acceptance | UNVERIFIED | Not attempted without a runtime key; auth contract is not sufficiently verified in Day 4 notes. |
-| Hybrid Analysis key restriction/submission permission | UNVERIFIED | No key probe; submit contract not verified. |
-| Hybrid Analysis rate-limit response | UNVERIFIED | No provider call made. |
-| MobSF URL reachability | SKIP | `MOBSF_URL` is not configured. |
-| MobSF API-key acceptance | UNVERIFIED | No URL/key and installed-version routes are unknown. |
-| MobSF analyzer readiness | UNVERIFIED | No running MobSF instance to query. |
-| Docker/MobSF version | FAIL / BLOCKED | Docker daemon pipe denied access; compose uses floating `latest`; no installed version can be read or pinned safely. |
+| Hybrid Analysis runtime key | PASS | `HYBRID_ANALYSIS_API_KEY` is present and loaded via config loader (value redacted). |
+| Hybrid Analysis hash lookup | PASS | Documented GET `https://www.hybrid-analysis.com/api/v2/search/hash` returned HTTP 200 for public hash `4faccd95...`. |
+| Hybrid Analysis key-info / quota | UNVERIFIED | Not officially verified against public documentation for this key tier; undocumented endpoints are not guessed. |
+| Hybrid Analysis submit permission | UNVERIFIED | No live sample submitted; external submission requires verified key permissions. |
+| MobSF Docker image pin | WARN | `docker-compose.yml` specifies floating/unpinned tag `opensecurity/mobile-security-framework-mobsf:latest`. |
+| MobSF URL reachability | FAIL | Connection actively refused at configured URL (`http://localhost:8001`). MobSF container in crash-loop (`DWD_DIR` posixpath issue on `latest` image). |
+| MobSF API key acceptance | FAIL | Unreachable host; could not probe `/api/v1/upload`. |
+| MobSF version / about | UNVERIFIED | Unreachable host. |
+| MobSF dynamic analyzer readiness | UNVERIFIED | Unreachable host. |
 
-No provider API calls, APK scans, uploads, or sample submissions were made.
-The provided Hybrid Analysis credential is not represented in files or output.
-The MobSF image tag is unchanged because a version pin cannot be verified from
-a running instance.
+## Actions required
+See `audit/day5/HUMAN_STEPS.md` for exact PowerShell steps:
+1. Pin the MobSF Docker tag in `docker-compose.yml` (replacing `latest`) and restart the container.
+2. Run `python scripts/provider_selfcheck.py` to confirm MobSF passes.
+3. Run `python scripts/record_provider_responses.py` (with `--apk` if testing MobSF).
+4. Run secrets check and commit the recordings to proceed past the Phase 2 GATE.
