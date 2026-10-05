@@ -46,13 +46,14 @@ class TestA11DynamicFailureAndDuration:
         dummy_file = tmp_path / "sample.bin"
         dummy_file.write_bytes(b"\x7fELF\x02\x01\x01\x00")
         monkeypatch.delenv("SANDBOX_API_URL", raising=False)
+        monkeypatch.delenv("HYBRID_ANALYSIS_API_KEY", raising=False)
 
         output = await run_dynamic_analysis(dummy_file)
         assert output.dynamic_status == "unavailable"
         # The failure reason must NOT repeat "Dynamic analysis not performed: "
         assert not output.failure_reason.startswith("Dynamic analysis not performed: Dynamic analysis not performed:")
         assert "Dynamic analysis not performed: Dynamic analysis not performed:" not in output.failure_reason
-        assert output.failure_reason == "SANDBOX_API_URL is not configured"
+        assert "not configured" in output.failure_reason.lower()
 
     def test_a11_null_duration_seconds_is_none(self):
         output = DynamicAnalysisOutput(
@@ -282,6 +283,7 @@ class TestA16GeoIPStatusDistinction:
         # Force DB not loaded/unconfigured
         monkeypatch.delenv("GEOIP_DB_PATH", raising=False)
         monkeypatch.delenv("GEOIP_ASN_DB_PATH", raising=False)
+        monkeypatch.setenv("GEOIP_HTTP_FALLBACK", "0")
         monkeypatch.setattr(geoip, "_city_reader", None)
         monkeypatch.setattr(geoip, "_asn_reader", None)
         monkeypatch.setattr(geoip, "_load_attempted", True)

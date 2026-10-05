@@ -23,6 +23,9 @@ from typing import Optional
 import httpx
 
 from agents.orchestrator.schema import DynamicAnalysisOutput
+from providers.dynamic.base import DynamicState
+from providers.dynamic.hybrid_analysis import HybridAnalysisAdapter
+from providers.dynamic.pipeline import DynamicAnalysisPipeline
 from .strace_parser import parse_strace_artifacts
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,7 +86,7 @@ def sandbox_token() -> str:
 
 
 def is_configured() -> bool:
-    return sandbox_url() is not None
+    return sandbox_url() is not None or bool((os.environ.get("HYBRID_ANALYSIS_API_KEY") or "").strip())
 
 
 def inspect_binary_architecture(sample_path: str | Path) -> str:
@@ -116,6 +119,250 @@ def inspect_binary_architecture(sample_path: str | Path) -> str:
     return "Generic / Unspecified"
 
 
+async def _run_hybrid_analysis_dynamic(
+    sample_path: str | Path,
+    file_name: str,
+    platform: Optional[str] = None,
+    file_type: Optional[str] = None,
+    static_data: Optional[dict] = None,
+    target_arch: Optional[str] = None,
+    timeout_seconds: int = 90,
+) -> DynamicAnalysisOutput:
+    """Execute dynamic lookup/analysis via Hybrid Analysis adapter."""
+    arch_str = str(target_arch or inspect_binary_architecture(sample_path))
+    path_str = str(sample_path)
+
+    try:
+        submitted_sha256 = compute_file_sha256(path_str)
+    except Exception as exc:
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="failed",
+            dynamic_status="failed",
+            failure_reason=f"Failed to read sample file: {exc}",
+            message=f"Dynamic analysis failed: {exc}",
+            target_architecture=arch_str,
+        )
+
+    # 1. Check Hybrid Analysis API Key
+    ha_key = (os.environ.get("HYBRID_ANALYSIS_API_KEY") or "").strip().strip('"').strip("'")
+    if not ha_key:
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="unavailable",
+            dynamic_status="unavailable",
+            failure_reason="HYBRID_ANALYSIS_API_KEY is not configured",
+            message="Dynamic analysis not performed: HYBRID_ANALYSIS_API_KEY is not configured",
+            target_architecture=arch_str,
+        )
+
+    # 2. Architecture & Platform Gating (Day 6 invariant: ZERO fabricated dynamic evidence)
+    plat_raw = str(platform or "").lower()
+    ft_raw = str(file_type or "").lower()
+
+    # Mach-O is static-only
+    if "macho" in ft_raw or "mach_o" in ft_raw or plat_raw in ("macos", "darwin", "macho"):
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="not_supported",
+            dynamic_status="unavailable",
+            failure_reason="Mach-O is static-only",
+            message="Dynamic analysis: not performed (static-only)",
+            target_architecture=arch_str,
+        )
+
+    # Non-x86_64 ELF is static-only
+    if ft_raw == "elf" or plat_raw == "linux":
+        arch_lower = arch_str.lower()
+        if not ("x86_64" in arch_lower or "amd64" in arch_lower or "x64" in arch_lower):
+            reason = f"{arch_str} is not supported (static-only)"
+            return DynamicAnalysisOutput(
+                sample_id=file_name,
+                available=False,
+                execution_mode="real",
+                status="not_supported",
+                dynamic_status="unavailable",
+                failure_reason=reason,
+                message=f"Dynamic analysis not performed: {reason}",
+                target_architecture=arch_str,
+            )
+
+    # Android APK
+    if ft_raw in ("apk", "android") or plat_raw == "android":
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="not_supported",
+            dynamic_status="unavailable",
+            failure_reason="APK dynamic analysis not configured",
+            message="Dynamic analysis not performed: APK dynamic analysis not configured",
+            target_architecture=arch_str,
+        )
+
+    try:
+        adapter = HybridAnalysisAdapter(api_key=ha_key, timeout=min(timeout_seconds, 20))
+        pipeline = DynamicAnalysisPipeline(providers={"hybrid_analysis": adapter})
+
+        norm_plat = "ELF" if (ft_raw == "elf" or plat_raw == "linux") else "PE"
+        norm_arch = "x86_64"
+
+        static_endpoints = []
+        if isinstance(static_data, dict):
+            extracted = static_data.get("extracted_strings") or {}
+            if isinstance(extracted, dict):
+                static_endpoints.extend(extracted.get("ips") or [])
+                static_endpoints.extend(extracted.get("urls") or [])
+
+        result = await asyncio.to_thread(
+            pipeline.run,
+            sha256=submitted_sha256,
+            platform=norm_plat,
+            architecture=norm_arch,
+            task_id=f"ha-{submitted_sha256[:12]}",
+            static_endpoints=tuple(static_endpoints),
+        )
+
+        if result.state == DynamicState.COMPLETED:
+            has_behavior = result.observation.has_behavior()
+
+            proc_tree = []
+            for proc in result.observation.process:
+                proc_tree.append({
+                    "pid": proc.get("pid") or 1,
+                    "name": proc.get("name") or proc.get("command") or "process",
+                    "command": proc.get("command") or proc.get("cmd") or proc.get("name") or "",
+                })
+
+            net_conns = []
+            for conn in result.observation.network:
+                net_conns.append({
+                    "ip": conn.get("ip") or conn.get("dest_ip") or "",
+                    "dest_ip": conn.get("dest_ip") or conn.get("ip") or "",
+                    "port": conn.get("port") or conn.get("dest_port") or "",
+                    "dest_port": conn.get("dest_port") or conn.get("port") or "",
+                    "domain": conn.get("domain") or conn.get("name") or "",
+                    "protocol": conn.get("protocol") or "TCP",
+                    "flagged_c2": conn.get("flagged_c2", False),
+                })
+
+            dns_queries = []
+            for d in result.observation.dns:
+                dom = d.get("name") or d.get("domain")
+                if dom and dom not in dns_queries:
+                    dns_queries.append(dom)
+
+            files_written = []
+            for f in result.observation.file:
+                fp = f.get("path") or f.get("name")
+                if fp and fp not in files_written:
+                    files_written.append(fp)
+
+            registry_changes = []
+            for r in result.observation.registry:
+                rk = r.get("path") or r.get("name")
+                if rk and rk not in registry_changes:
+                    registry_changes.append(rk)
+
+            api_calls = [row.get("name", "") for row in result.observation.api_call if row.get("name")]
+
+            c2_detected = [
+                c.get("ip") or c.get("domain") for c in net_conns if c.get("flagged_c2")
+            ]
+
+            msg = result.report_line or (
+                "Hypervisor telemetry recorded." if has_behavior else "A provider verdict was reported, but no behavior was observed."
+            )
+
+            return DynamicAnalysisOutput(
+                sample_id=file_name,
+                available=True,
+                execution_mode="real",
+                status="completed",
+                dynamic_status="completed",
+                failure_reason=None,
+                task_id=result.provenance.get("task_id", f"ha-{submitted_sha256[:12]}"),
+                sandbox_url="https://www.hybrid-analysis.com",
+                message=msg,
+                target_architecture=arch_str,
+                process_tree=proc_tree,
+                api_calls=api_calls,
+                network_connections=net_conns,
+                dns_queries=dns_queries,
+                files_written=files_written,
+                registry_changes=registry_changes,
+                c2_endpoints_detected=c2_detected,
+            )
+
+        elif result.state == DynamicState.NO_RESULT:
+            return DynamicAnalysisOutput(
+                sample_id=file_name,
+                available=False,
+                execution_mode="real",
+                status="unavailable",
+                dynamic_status="unavailable",
+                failure_reason="No prior detonation report found in Hybrid Analysis",
+                message="Dynamic analysis (Hybrid Analysis): No prior detonation report found for this hash",
+                target_architecture=arch_str,
+            )
+
+        elif result.state == DynamicState.TIMEOUT:
+            return DynamicAnalysisOutput(
+                sample_id=file_name,
+                available=False,
+                execution_mode="real",
+                status="failed",
+                dynamic_status="failed",
+                failure_reason="Hybrid Analysis request timed out",
+                message="Dynamic analysis failed: timeout",
+                target_architecture=arch_str,
+            )
+
+        elif result.state == DynamicState.NOT_SUPPORTED_PLATFORM:
+            return DynamicAnalysisOutput(
+                sample_id=file_name,
+                available=False,
+                execution_mode="real",
+                status="not_supported",
+                dynamic_status="unavailable",
+                failure_reason=result.reason,
+                message=result.report_line or f"Dynamic analysis not performed: {result.reason}",
+                target_architecture=arch_str,
+            )
+
+        else:
+            reason = result.reason or result.state.value.lower().replace("_", " ")
+            return DynamicAnalysisOutput(
+                sample_id=file_name,
+                available=False,
+                execution_mode="real",
+                status="unavailable",
+                dynamic_status="unavailable",
+                failure_reason=reason,
+                message=f"Dynamic analysis not performed: {reason}",
+                target_architecture=arch_str,
+            )
+
+    except Exception as exc:
+        _LOGGER.warning("Hybrid Analysis dynamic analysis error: %s", exc)
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="failed",
+            dynamic_status="failed",
+            failure_reason=f"Hybrid Analysis execution error: {exc}",
+            message=f"Dynamic analysis failed: {exc}",
+            target_architecture=arch_str,
+        )
+
+
 async def run_dynamic_analysis(
     sample_path: str | Path,
     platform: Optional[str] = None,
@@ -129,7 +376,7 @@ async def run_dynamic_analysis(
     Execute dynamic detonation in the isolated sandbox host.
 
     Zero simulation fallback:
-    - If SANDBOX_API_URL is unconfigured -> dynamic_status='unavailable'
+    - If SANDBOX_API_URL is unconfigured -> delegate to Hybrid Analysis dynamic adapter
     - If sandbox fails or times out -> dynamic_status='failed'
     - Validates manifest.json SHA-256 for all artifacts before parsing.
     """
@@ -138,17 +385,16 @@ async def run_dynamic_analysis(
     target_arch = target_architecture or inspect_binary_architecture(sample_path)
     url = sandbox_url()
 
-    # 1. Unconfigured sandbox host
+    # 1. Unconfigured remote sandbox host -> delegate to Hybrid Analysis
     if not url:
-        return DynamicAnalysisOutput(
-            sample_id=file_name,
-            available=False,
-            execution_mode="real",
-            status="unavailable",
-            dynamic_status="unavailable",
-            failure_reason="SANDBOX_API_URL is not configured",
-            message="Dynamic analysis not performed: SANDBOX_API_URL is not configured",
-            target_architecture=target_arch,
+        return await _run_hybrid_analysis_dynamic(
+            sample_path=sample_path,
+            file_name=file_name,
+            platform=platform,
+            file_type=file_type,
+            static_data=static_data,
+            target_arch=target_arch,
+            timeout_seconds=timeout_seconds,
         )
 
     # Compute submitted sample hash for evidence-to-sample binding

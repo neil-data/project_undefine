@@ -39,6 +39,7 @@ async def test_dynamic_unconfigured_reports_unavailable(tmp_path, monkeypatch):
     """When SANDBOX_API_URL is not configured, dynamic analysis returns dynamic_status='unavailable'."""
     monkeypatch.delenv("SANDBOX_API_URL", raising=False)
     monkeypatch.delenv("CAPE_API_URL", raising=False)
+    monkeypatch.delenv("HYBRID_ANALYSIS_API_KEY", raising=False)
     dummy_elf = tmp_path / "hello_benign"
     dummy_elf.write_bytes(b"\x7fELF\x01\x01\x01\x00" + b"\x00" * 50)
     
@@ -61,6 +62,7 @@ async def test_dynamic_zero_simulation_mandate(tmp_path, monkeypatch):
     """Binaries never produce simulated/invented events when sandbox is unconfigured."""
     monkeypatch.delenv("SANDBOX_API_URL", raising=False)
     monkeypatch.delenv("CAPE_API_URL", raising=False)
+    monkeypatch.delenv("HYBRID_ANALYSIS_API_KEY", raising=False)
     sample_a = tmp_path / "sample_a"
     sample_a.write_bytes(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 50)
 

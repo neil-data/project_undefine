@@ -84,7 +84,7 @@ def _ensure_loaded() -> None:
 
 def is_available() -> bool:
     _ensure_loaded()
-    return _city_reader is not None
+    return _city_reader is not None or os.environ.get("GEOIP_HTTP_FALLBACK", "1").lower() in ("1", "true")
 
 
 def get_status() -> dict:
@@ -270,7 +270,7 @@ def lookup_ip(ip: str) -> Optional[dict]:
 
     _ensure_loaded()
     if _city_reader is None:
-        if os.environ.get("GEOIP_HTTP_FALLBACK", "0").lower() in ("1", "true"):
+        if os.environ.get("GEOIP_HTTP_FALLBACK", "1").lower() in ("1", "true"):
             fallback = _lookup_http_fallback(ip)
             if fallback is not None:
                 fallback["status"] = "resolved"
@@ -364,7 +364,7 @@ def lookup(ip: str) -> Optional[dict]:
         record["database_configured"] = True
         return record
 
-    if os.environ.get("GEOIP_HTTP_FALLBACK", "0").lower() in ("1", "true"):
+    if os.environ.get("GEOIP_HTTP_FALLBACK", "1").lower() in ("1", "true"):
         fallback = _lookup_http_fallback(ip)
         if fallback is not None:
             fallback["status"] = "resolved"

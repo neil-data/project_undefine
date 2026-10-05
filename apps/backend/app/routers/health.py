@@ -18,8 +18,11 @@ APP_VERSION = "0.1.0-alpha"
 
 @router.get("", response_model=HealthResponse)
 def health_check():
-    # Check if sandbox is configured and available
-    sandbox_configured = bool(os.environ.get("SANDBOX_API_URL") or os.environ.get("CAPE_API_URL"))
+    sandbox_configured = bool(
+        os.environ.get("SANDBOX_API_URL")
+        or os.environ.get("CAPE_API_URL")
+        or os.environ.get("HYBRID_ANALYSIS_API_KEY")
+    )
     
     return HealthResponse(
         status="ok",
