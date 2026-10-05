@@ -23,7 +23,8 @@ testpaths = [
     "analysis",
     "apps/backend/tests",
     "apps/ingestion",
-    "sandbox/host/tests"
+    "sandbox/host/tests",
+    "tests"
 ]
 python_files = "test_*.py"
 python_classes = "Test*"

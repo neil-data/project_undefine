@@ -371,14 +371,6 @@ def _render_narrative(summary: str, steps: list[dict]) -> str:
     clean_summary = html.escape(summary.strip()).replace("<br>", " ").replace("<br/>", " ").replace("`", "")
     if not steps:
         return clean_summary
-
-
-def _is_grounded(text: str, static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> bool:
-    """Compatibility wrapper for callers that validate a plain narrative sentence."""
-    candidate = json.dumps({"executive_summary": text, "technical_steps": []})
-    valid, _, _ = _validate_narrative(candidate, static, dynamic, [], [], 0)
-    return valid
-
     lines = [clean_summary, "", "Technical Execution Steps:"]
     for s in steps:
         st = html.escape(str(s.get("step", ""))).replace("|", "").strip()
@@ -387,6 +379,13 @@ def _is_grounded(text: str, static: StaticAnalysisOutput, dynamic: Optional[Dyna
         lines.append(f"Step {st}: {act} (Evidence: {ev})")
 
     return "\n".join(lines)
+
+
+def _is_grounded(text: str, static: StaticAnalysisOutput, dynamic: Optional[DynamicAnalysisOutput]) -> bool:
+    """Compatibility wrapper for callers that validate a plain narrative sentence."""
+    candidate = json.dumps({"executive_summary": text, "technical_steps": []})
+    valid, _, _ = _validate_narrative(candidate, static, dynamic, [], [], 0)
+    return valid
 
 
 def _fallback_summary(
