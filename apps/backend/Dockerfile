@@ -15,8 +15,9 @@ COPY packages packages
 COPY apps apps
 COPY data data
 COPY sandbox sandbox
+COPY providers providers
 
-ENV PYTHONPATH=/app:/app/apps:/app/packages:/app/analysis:/app/analysis/static
+ENV PYTHONPATH=/app:/app/apps:/app/packages:/app/analysis:/app/analysis/static:/app/providers
 EXPOSE 8000
 
 CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
