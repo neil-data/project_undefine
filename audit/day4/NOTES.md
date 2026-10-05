@@ -43,3 +43,23 @@ operations are UNVERIFIED. The official MobSF image in compose is tagged
 auth behavior, and delete operation are UNVERIFIED. No live provider requests
 or uploads have been made. Provider operations needing these contracts remain
 unimplemented.
+
+## Part 2 Hybrid Analysis documentation gate
+
+Verified from official sources: API v2 changelog v2.35.0 specifies `GET
+/search/hash` replacing the deprecated `POST /search/hash`; official account
+guidance says API key and secret are both required; full automated submission
+requires the full key capability/vetting; public sandbox submissions are
+searchable and available to the world. Sources:
+
+* https://www.hybrid-analysis.com/docs/api/v2-changelog
+* https://www.hybrid-analysis.com/knowledge-base/issuing-self-signed-api-key
+* https://www.hybrid-analysis.com/knowledge-base/issuing-full-api-key-for-automated-submissions
+* https://www.hybrid-analysis.com/knowledge-base/removing-uploaded-sensitive-files
+
+UNVERIFIED and intentionally unimplemented: exact current lookup query
+parameters/response schema, auth header, environment-list operation and
+response, submit endpoint/multipart fields, submission-permission check,
+polling/status endpoint and states, report fetch schema, request deletion, and
+quota response. The official API reference is client-rendered and did not
+expose its schema here. No guessed methods or endpoints were added.
