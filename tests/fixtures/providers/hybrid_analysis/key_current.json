@@ -1,0 +1,10 @@
+{
+  "api_key": "[REDACTED]",
+  "auth_level": 1,
+  "auth_level_name": "restricted",
+  "user": {
+    "email": "neilsbanerjee_btce2025@iar.ac.in",
+    "id": "6ac1eac459407e46bc0a9515",
+    "name": "Neil"
+  }
+}

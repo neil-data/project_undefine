@@ -1,0 +1,16 @@
+{
+  "reports": [
+    {
+      "environment_description": "Windows 10 64 bit",
+      "environment_id": 160,
+      "error_origin": "CLIENT",
+      "error_type": "FILE_TYPE_BAD_ERROR",
+      "id": "6ac035d81eaddbaf1c0d3e53",
+      "state": "ERROR",
+      "verdict": null
+    }
+  ],
+  "sha256s": [
+    "4faccd95d23724469122505b90cdfd280ff552528be38e73e2b969be90eb7380"
+  ]
+}

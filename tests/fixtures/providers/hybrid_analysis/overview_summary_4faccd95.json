@@ -1,0 +1,9 @@
+{
+  "analysis_start_time": "2026-10-02T22:53:12+00:00",
+  "last_multi_scan": "2026-10-03T11:05:19+00:00",
+  "multiscan_result": 72,
+  "sha256": "4faccd95d23724469122505b90cdfd280ff552528be38e73e2b969be90eb7380",
+  "submitted_at": "2026-10-02T05:11:44+00:00",
+  "threat_score": null,
+  "verdict": "malicious"
+}

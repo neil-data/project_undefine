@@ -1,0 +1,98 @@
+[
+  {
+    "analysis_mode": "KERNELMODE",
+    "architecture": "WINDOWS",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "Windows 10 64 bit",
+    "environment_id": 160,
+    "group_icon": "windows",
+    "id": "160",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  },
+  {
+    "analysis_mode": "KERNELMODE",
+    "architecture": "WINDOWS",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "Windows 11 64 bit",
+    "environment_id": 140,
+    "group_icon": "windows",
+    "id": "140",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  },
+  {
+    "analysis_mode": "KERNELMODE",
+    "architecture": "WINDOWS",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "Windows 7 32 bit",
+    "environment_id": 100,
+    "group_icon": "windows",
+    "id": "100",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  },
+  {
+    "analysis_mode": "KERNELMODE",
+    "architecture": "WINDOWS",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "Windows 7 32 bit (HWP Support)",
+    "environment_id": 110,
+    "group_icon": "windows",
+    "id": "110",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  },
+  {
+    "analysis_mode": "KERNELMODE",
+    "architecture": "WINDOWS",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "Windows 7 64 bit",
+    "environment_id": 120,
+    "group_icon": "windows",
+    "id": "120",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  },
+  {
+    "analysis_mode": "SENSORMODE",
+    "architecture": "LINUX",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "Linux (Ubuntu 24.04, 64 bit)",
+    "environment_id": 330,
+    "group_icon": "linux",
+    "id": "330",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  },
+  {
+    "analysis_mode": "SENSORMODE",
+    "architecture": "MACOS_ARM",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "macOS Tahoe (ARM64)",
+    "environment_id": 430,
+    "group_icon": "apple",
+    "id": "430",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  },
+  {
+    "analysis_mode": "USERMODE",
+    "architecture": "ANDROID",
+    "busy_virtual_machines": 9223372036854775807,
+    "description": "Android Static Analysis",
+    "environment_id": 200,
+    "group_icon": "android",
+    "id": "200",
+    "invalid_virtual_machines": 0,
+    "total_virtual_machines": 9223372036854775807,
+    "virtual_machines": []
+  }
+]
