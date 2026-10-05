@@ -21,4 +21,6 @@ geoip2>=4.8.0
 scapy>=2.5.0
 dpkt>=1.9.8
 pyzipper>=0.4.0
--e ./static-analysis
+httpx>=0.27.0
+requests>=2.31.0
+reportlab>=4.0.0
