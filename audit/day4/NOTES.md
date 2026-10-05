@@ -82,3 +82,35 @@ Mach-O resolves to `NOT_SUPPORTED_PLATFORM`, creates no dynamic findings, and
 renders exactly `Dynamic analysis: not performed (static-only)`. Non-x86_64
 ELF similarly returns `NOT_SUPPORTED_PLATFORM` with its architecture in the
 reason.
+
+## State and test matrix
+
+| State | Shared pipeline behavior | Real provider lane |
+| --- | --- | --- |
+| COMPLETED | Validated behavior only; verdict remains separate INTEL | No live lane |
+| NO_RESULT | No dynamic evidence; one clean not-performed line | Generic path tested |
+| NOT_SUPPORTED_PLATFORM | No dynamic evidence; architecture reason, or exact Mach-O static-only line | Tested |
+| SUBMISSION_DISABLED | Represented by shared result state | Provider gate UNVERIFIED |
+| KEY_MISSING | Represented by shared result state | Auth probes UNVERIFIED |
+| KEY_RESTRICTED | Represented by shared result state | Permission probe UNVERIFIED |
+| RATE_LIMITED | Represented by shared result state | Persistent provider budget not implemented |
+| TIMEOUT | No dynamic evidence; clean line | Generic path tested |
+| PROVIDER_UNAVAILABLE | No dynamic evidence; clean line | Generic path tested |
+| INVALID_RESPONSE | Whole response rejected; no partial evidence | Fake/recorded path tested |
+
+Part 1 uses deterministic fake responses only. Part 0 key-presence and config
+tests do not make HTTP calls. There are no live provider checks. The shared
+trust boundary has unit coverage; no full-suite run was repeated after the
+provider/parser changes because the requested full-suite maximum was already
+used.
+
+## Part 5 parser status
+
+LIEF and androguard are not installed. No package was downloaded. The facade
+uses the repository's defensive ELF, PE, and Mach-O parsers and emits bounded
+STATIC hints at confidence 0.5 or lower. It reports unknown packing unless a
+native parser's packer/entropy indicator ran, reports Go build-info marker
+presence only, and returns partial APK data because neither androguard nor
+verified MobSF static data is available. Zip entry names are never emitted as
+paths, URLs, or domains. Parser byte buffers are processed in memory and are
+not retained.
