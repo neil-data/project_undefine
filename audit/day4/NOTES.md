@@ -75,3 +75,10 @@ scan deletion operation, dynamic analyzer readiness, start/install/run/stop
 routes, and dynamic report schema. The existing `sandbox/adapters/mobsf` files
 are legacy code and are not treated as documentation for the installed build.
 No MobSF request or APK upload was made.
+
+## Part 4 Mach-O
+
+Mach-O resolves to `NOT_SUPPORTED_PLATFORM`, creates no dynamic findings, and
+renders exactly `Dynamic analysis: not performed (static-only)`. Non-x86_64
+ELF similarly returns `NOT_SUPPORTED_PLATFORM` with its architecture in the
+reason.

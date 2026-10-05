@@ -152,6 +152,17 @@ def test_macho_static_only_line_and_static_platform_detection():
     result = DynamicAnalysisPipeline().run(Static.sha256, platform, arch)
     assert result.state == DynamicState.NOT_SUPPORTED_PLATFORM
     assert result.report_line == "Dynamic analysis: not performed (static-only)"
+    assert result.findings == [] and not result.observation.has_behavior()
+    integrated = enrich_orchestrator_state({"sample_id": "macho"}, result)
+    assert integrated["dynamic_output"] is None
+    assert integrated["provider_report_line"] == "Dynamic analysis: not performed (static-only)"
+
+
+def test_non_x86_64_elf_reports_unsupported_architecture():
+    result = DynamicAnalysisPipeline().run("c" * 64, "ELF", "aarch64")
+    assert result.state == DynamicState.NOT_SUPPORTED_PLATFORM
+    assert result.reason == "unsupported platform (aarch64)"
+    assert result.report_line == "Dynamic analysis not performed: unsupported platform (aarch64)"
 
 
 @pytest.mark.parametrize("state", ["KEY_RESTRICTED", "SUBMISSION_DISABLED", "RATE_LIMITED", "TIMEOUT", "NOT_SUPPORTED_PLATFORM"])

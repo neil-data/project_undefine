@@ -18,10 +18,7 @@ class DynamicAnalysisPipeline:
     def run(self, sha256, platform, architecture, task_id="lookup", environment="static-only", executed_by=None, static_endpoints=()):
         provider_name = select_provider(platform, architecture)
         if provider_name is None:
-            reason = f"unsupported platform ({architecture})" if str(platform).upper() == "ELF" else "static-only"
-            result = NormalizedProviderResult(DynamicState.NOT_SUPPORTED_PLATFORM, reason=reason, narrative=f"Dynamic analysis not performed: {reason}")
-            result.report_line = "Dynamic analysis: not performed (static-only)" if reason == "static-only" else render_dynamic_result(result)
-            return result
+            return unsupported_platform_result(platform, architecture)
         cached = self.cache.get(sha256)
         if cached is not None:
             return cached
@@ -111,6 +108,19 @@ def detect_platform(static_output):
     if kind in {"mach_o", "macho"} or (binary and getattr(binary, "format", "") == "MachO"):
         return "Mach-O", architecture
     return kind.upper(), architecture
+
+
+def unsupported_platform_result(platform, architecture):
+    """Return the sole canonical no-dynamic result for unsupported formats."""
+    macho = str(platform).upper().replace("-", "") in {"MACHO", "MACHO64"}
+    reason = "static-only" if macho else f"unsupported platform ({architecture})"
+    result = NormalizedProviderResult(
+        DynamicState.NOT_SUPPORTED_PLATFORM,
+        reason=reason,
+        narrative="Dynamic analysis: not performed (static-only)" if macho else f"Dynamic analysis not performed: {reason}",
+    )
+    result.report_line = result.narrative
+    return result
 
 
 def enrich_orchestrator_state(state, result):
