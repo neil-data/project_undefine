@@ -1,4 +1,4 @@
-﻿# E-Rakshak Production Deployment Guide — Render & Vercel
+# E-Rakshak Production Deployment Guide — Render & Vercel
 
 This guide provides step-by-step instructions for deploying the **E-Rakshak Unified Forensic & Threat Analysis Suite** from the `final` / `deploy` branch to **Render** (backend services, database, Redis, Elasticsearch, MobSF) and **Vercel** (frontend dashboard).
 
@@ -70,13 +70,11 @@ Render uses the single source of truth blueprint located at `render.yaml`.
 4. In the **Branch** field, select **`deploy`** (or **`final`**).
 5. Render will automatically detect and parse `render.yaml`.
 
-### Step 3.2: Blueprint Services Defined
-Render Blueprint creates the following 5 coordinated resources:
-1. **`e-rakshak-db`**: Managed PostgreSQL 16 database (`ps4_malware`).
-2. **`e-rakshak-backend`**: Web Docker service built from `apps/backend/Dockerfile`.
-3. **`e-rakshak-redis`**: Private caching service (`redis:7-alpine`) with 5 GB persistent disk.
-4. **`e-rakshak-elasticsearch`**: Private search service (`elasticsearch:8.13.0`) with 10 GB persistent disk.
-5. **`e-rakshak-mobsf`**: Isolated private service (`opensecurity/mobile-security-framework-mobsf:latest`) with 10 GB persistent disk.
+### Step 3.2: 100% Free Tier Blueprint Resources
+The free blueprint creates:
+1. **`e-rakshak-db`**: Managed PostgreSQL 16 database (`ps4_malware`) on Render's **Free Plan** ($0.00 / month, no credit card required).
+2. **`e-rakshak-backend`**: Web service built using `apps/backend/Dockerfile` on Render's **Free Plan** ($0.00 / month, 750 free hours/month).
+3. **Storage & Microservices**: Uses container storage (`/tmp/ingestion_samples`) avoiding paid disk fees. Redis, Elasticsearch, and MobSF are made optional via environment variables with the backend's built-in graceful fallbacks.
 
 ### Step 3.3: Configure Production Secrets in Render Dashboard
 Under **Environment Variables** for **`e-rakshak-backend`**, provide values for the `sync: false` keys:
