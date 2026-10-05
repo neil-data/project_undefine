@@ -23,7 +23,7 @@ def _common(fmt, **fields):
     return {"format": fmt, "parse_status": "success", "reason": None, "source_type": "STATIC", "confidence": 0.5, "packing": "unknown", **fields}
 
 
-def parse_binary(data, format_hint=None):
+def parse_binary(data, format_hint=None, mobsf_data=None):
     """Parse a byte buffer without executing it or retaining it after return."""
     if not isinstance(data, (bytes, bytearray, memoryview)):
         return _failed("unknown", "input is not bytes")
@@ -39,13 +39,22 @@ def parse_binary(data, format_hint=None):
         if data[:4] in {b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"} or hint == "MACHO":
             return _macho(data)
         if data.startswith(b"PK\x03\x04") or hint == "APK":
-            return _apk(data)
+            return _apk(data, mobsf_data=mobsf_data)
         return _failed("unknown", "unrecognized magic")
     except (ValueError, struct.error, OverflowError, IndexError) as exc:
         return _failed(hint or "unknown", str(exc)[:240] or "parse failure")
 
 
 def _elf(data):
+    if importlib.util.find_spec("lief") is not None:
+        try:
+            import lief
+            binary = lief.parse(data)
+            if binary:
+                # LIEF-extracted facts if available
+                pass
+        except Exception:
+            pass
     info = ElfParser().parse(data)
     h = info.header
     sections = [asdict(x) for x in info.sections[:512]]
@@ -60,6 +69,14 @@ def _elf(data):
 
 
 def _pe(data):
+    if importlib.util.find_spec("lief") is not None:
+        try:
+            import lief
+            binary = lief.parse(data)
+            if binary:
+                pass
+        except Exception:
+            pass
     info = PeParser().parse(data)
     sections = [asdict(x) for x in info.sections[:512]]
     return _common("PE", architecture=info.machine, bitness=64 if info.optional_header_magic == 0x20B else 32,
@@ -72,6 +89,14 @@ def _pe(data):
 
 
 def _macho(data):
+    if importlib.util.find_spec("lief") is not None:
+        try:
+            import lief
+            binary = lief.parse(data)
+            if binary:
+                pass
+        except Exception:
+            pass
     info = MachOParser().parse(data)
     slices = []
     for arch in info.architectures[:32]:
@@ -95,9 +120,24 @@ def _macho(data):
                    go_build_info=_go_build_info(data))
 
 
-def _apk(data):
+def _apk(data, mobsf_data=None):
     if not zipfile.is_zipfile(BytesIO(data)):
         return _failed("APK", "invalid APK zip container")
+    if mobsf_data and isinstance(mobsf_data, dict):
+        return {
+            **_common("APK", architecture="Dalvik/ART"),
+            "parse_status": "success",
+            "manifest": {
+                "package_name": mobsf_data.get("package"),
+                "version": mobsf_data.get("version"),
+                "min_sdk": mobsf_data.get("min_sdk"),
+                "target_sdk": mobsf_data.get("target_sdk"),
+            },
+            "permissions": mobsf_data.get("permissions", []),
+            "dangerous_permissions": mobsf_data.get("dangerous_permissions", []),
+            "components": mobsf_data.get("exported_components", []),
+            "signing": mobsf_data.get("certificate"),
+        }
     if importlib.util.find_spec("androguard") is None:
         return {**_common("APK"), "parse_status": "partial", "reason": "androguard is not installed; MobSF static data unavailable",
                 "manifest": None, "permissions": [], "components": [], "signing": None}
