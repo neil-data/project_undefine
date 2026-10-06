@@ -39,6 +39,10 @@ services:
         sync: false
       - key: HYBRID_ANALYSIS_API_KEY
         sync: false
+      # Explicit opt-in: submit supported EXE/PE/DLL/ELF samples when the HA
+      # secret is configured. Set this to "false" in Render to disable uploads.
+      - key: ALLOW_EXTERNAL_SUBMISSION
+        value: "true"
       - key: MALWARE_BAZAAR_API_KEY
         sync: false
       - key: GROQ_API_KEY

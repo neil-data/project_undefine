@@ -157,6 +157,29 @@ def test_ha_submission_disabled_by_default(monkeypatch):
     assert res.get("state") == DynamicState.SUBMISSION_DISABLED
 
 
+def test_render_production_configuration_opts_in_without_exposing_ha_secret():
+    """The production blueprint enables HA submissions and keeps the key in Render secrets."""
+    import yaml
+
+    blueprint = yaml.safe_load((Path(__file__).resolve().parents[2] / "render.yaml").read_text(encoding="utf-8"))
+    backend = next(service for service in blueprint["services"] if service["name"] == "e-rakshak-backend")
+    settings = {entry["key"]: entry for entry in backend["envVars"]}
+    assert settings["ALLOW_EXTERNAL_SUBMISSION"]["value"] == "true"
+    assert settings["HYBRID_ANALYSIS_API_KEY"]["sync"] is False
+
+
+def test_missing_key_and_explicit_disable_keep_submission_blocked(monkeypatch):
+    monkeypatch.setenv("HYBRID_ANALYSIS_API_KEY", "")
+    monkeypatch.setenv("ALLOW_EXTERNAL_SUBMISSION", "true")
+    adapter = HybridAnalysisAdapter(api_key="", budget_file="unused-test-budget.json")
+    assert adapter.submit("sample.exe")["state"] == DynamicState.KEY_MISSING.value
+
+    monkeypatch.setenv("HYBRID_ANALYSIS_API_KEY", "test-key")
+    monkeypatch.setenv("ALLOW_EXTERNAL_SUBMISSION", "false")
+    adapter = HybridAnalysisAdapter(budget_file="unused-test-budget.json")
+    assert adapter.submit("sample.exe")["state"] == DynamicState.SUBMISSION_DISABLED.value
+
+
 def test_real_execution_lifecycle_requires_task_and_normalizes_report(tmp_path, monkeypatch):
     """Only a submitted task's completed report can pass behavior to the trust boundary."""
     import hashlib
