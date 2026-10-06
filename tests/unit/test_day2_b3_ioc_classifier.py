@@ -6,6 +6,7 @@ Go symbol / base64 / system library rejections, and whitelist integrity.
 import pytest
 
 from packages.shared.ioc_classifier import IoCClassifier, strip_glued_hex, validate_domain
+from apps.backend.app.analysis import _build_ioc_intelligence, _extract_network_indicators, _validated_extracted_strings
 from packages.shared.allowlist import (
     PUBLIC_DNS_RESOLVERS,
     LEGITIMATE_BENIGN_DOMAINS,
@@ -64,6 +65,45 @@ class TestDomainValidation:
 
 
 class TestIoCClassifier:
+    def test_production_report_path_filters_non_ioc_fragments(self):
+        normalized = _validated_extracted_strings({
+            "ips": ["version.1.2.3.4", "203.0.113.7"],
+            "urls": ["sample.exe -quiet", "http://example.com/payload"],
+            "suspicious_keywords": ["static-rule-keyword"],
+        })
+        assert normalized.ips == ["203.0.113.7"]
+        assert normalized.urls == ["http://example.com/payload"]
+        assert normalized.suspicious_keywords == ["static-rule-keyword"]
+
+        extracted_network = _extract_network_indicators({
+            "extracted_strings": {"ips": [], "urls": ["C:\\symbols\\agent.pdb", "sample.exe -quiet"]},
+            "explained_strings": [
+                {"value": "System.Net.Http.HttpClient", "type": "domain"},
+                {"value": "ExampleCorp.Setup.nsis", "type": "domain"},
+                {"value": "2.4.1.0", "type": "domain"},
+            ],
+        })
+        assert extracted_network["domains"] == []
+        assert extracted_network["urls"] == []
+
+        report_iocs = _build_ioc_intelligence(
+            {"extracted_strings": {}}, None,
+            {
+                "ips": [],
+                "domains": ["System.Net.Http.HttpClient", "ExampleCorp.Setup.nsis", "2.4.1.0"],
+                "urls": ["C:\\symbols\\agent.pdb", "sample.exe -quiet"],
+            },
+        )
+        values = {item["indicator"] for item in report_iocs}
+        assert not values.intersection({
+            "System.Net.Http.HttpClient", "ExampleCorp.Setup.nsis", "2.4.1.0",
+            "C:\\symbols\\agent.pdb", "sample.exe -quiet",
+        })
+        assert all(item["type"] in {
+            "HASH_SHA256", "HASH_SHA1", "HASH_MD5", "HASH", "IP", "DOMAIN",
+            "URL", "SYSTEM_INFRASTRUCTURE", "PERSISTENCE_PATH", "DROPPED_FILE",
+        } for item in report_iocs)
+
     def test_public_dns_resolvers_classified_as_system_infrastructure(self):
         for resolver in ["8.8.8.8", "1.1.1.1", "9.9.9.9"]:
             res = IoCClassifier.classify(resolver)

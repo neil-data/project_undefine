@@ -58,6 +58,18 @@ async def test_dynamic_unconfigured_reports_unavailable(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_macho_static_only_completes_without_dynamic_provider_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("HYBRID_ANALYSIS_API_KEY", raising=False)
+    sample = tmp_path / "sample.macho"
+    sample.write_bytes(b"\xcf\xfa\xed\xfe" + b"\x00" * 64)
+    result = await sandbox.run_dynamic_analysis(sample, platform="macos", file_type="mach_o")
+    assert result.status == "not_supported"
+    assert result.failure_reason == "Mach-O is static-only"
+    assert result.message == "Dynamic analysis: not performed (static-only)"
+    assert result.network_connections == []
+
+
+@pytest.mark.asyncio
 async def test_dynamic_zero_simulation_mandate(tmp_path, monkeypatch):
     """Binaries never produce simulated/invented events when sandbox is unconfigured."""
     monkeypatch.delenv("SANDBOX_API_URL", raising=False)

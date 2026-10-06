@@ -303,7 +303,12 @@ _REJECTED_TLDS = {
 
 
 def _is_valid_domain(val: str, *, contextual: bool = False) -> bool:
-    valid, _ = _validate_domain_ioc(val, allow_short_sld=contextual)
+    domain = str(val).strip()
+    if (is_symbol(domain)
+            or re.fullmatch(r"\d+(?:\.\d+){1,}", domain)
+            or domain.lower().endswith(".nsis")):
+        return False
+    valid, _ = _validate_domain_ioc(domain, allow_short_sld=contextual)
     return valid
 
 
@@ -325,6 +330,16 @@ def _is_valid_url(url: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def _validated_extracted_strings(raw: dict) -> ExtractedStrings:
+    """Normalize network IoCs before the orchestrator can use them for tags."""
+    raw = raw if isinstance(raw, dict) else {}
+    return ExtractedStrings(
+        urls=[str(value) for value in (raw.get("urls") or []) if _is_valid_url(str(value))],
+        ips=[str(value) for value in (raw.get("ips") or []) if _is_valid_ipv4(str(value), allow_private=True)],
+        suspicious_keywords=raw.get("suspicious_keywords") or [],
+    )
 
 
 def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict | DynamicAnalysisOutput] = None) -> dict:
@@ -472,6 +487,8 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
 
     # 2. IP IoCs
     for ip in indicators.get("ips", []):
+        if not _is_valid_ipv4(str(ip), allow_private=True):
+            continue
         connection = dynamic_connections.get(ip)
         flagged = bool(connection and connection.get("flagged_c2"))
         is_tor, tor_label = geoip.check_tor_status(ip)
@@ -494,8 +511,16 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
     # 3. Domain IoCs
     for domain in indicators.get("domains", []):
         dynamic = domain in dynamic_domains
+        domain_text = str(domain).strip()
+        # Known extraction noise that can resemble a DNS name: language/.NET
+        # symbols, version tuples, and installer metadata fragments.
+        if (is_symbol(domain_text)
+                or re.fullmatch(r"\d+(?:\.\d+){1,}", domain_text)
+                or domain_text.lower().endswith(".nsis")
+                or not _is_valid_domain(domain_text, contextual=dynamic)):
+            continue
         classified = IoCClassifier.classify(
-            domain,
+            domain_text,
             hint_type="DOMAIN",
             source="Static + Dynamic" if dynamic else "Static Analysis",
             source_type="DYNAMIC" if dynamic else "STATIC",
@@ -509,6 +534,8 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
     # 4. URL IoCs
     for url in indicators.get("urls", []):
         clean_url = _strip_glued_hex_ioc(url)
+        if not _is_valid_url(clean_url):
+            continue
         classified = IoCClassifier.classify(
             clean_url,
             hint_type="URL",
@@ -588,7 +615,21 @@ def _build_ioc_intelligence(raw_static: dict, dynamic_output: Optional[dict | Dy
                     "related_behavior": f"Process execution observed (PID {pid})" if pid else "Process execution observed",
                 })
 
-    return records
+    # IoCClassifier also returns descriptive categories (SYMBOL, LIBRARY,
+    # PACKAGE_ENTRY, SYSTEM_INFRASTRUCTURE, UNKNOWN). Those are useful while
+    # parsing strings, but are not pivots and must not flow into report IoCs,
+    # correlations, recommendations, or exports. Process rows are retained
+    # only when sourced from observed dynamic process evidence.
+    pivot_types = {"HASH", "HASH_SHA256", "HASH_SHA1", "HASH_MD5", "IP", "DOMAIN", "URL",
+                   "SYSTEM_INFRASTRUCTURE",
+                   "PERSISTENCE_PATH", "DROPPED_FILE"}
+    return [
+        record for record in records
+        if (str(record.get("type", "")).upper() in pivot_types
+            or (str(record.get("type", "")).upper() == "PROCESS"
+                and str(record.get("evidence_state", "")).upper() == "OBSERVED"
+                and str(record.get("source_type", "")).upper() == "DYNAMIC"))
+    ]
 
 
 def _build_evidence_correlations(raw_static: dict, dynamic_output: Optional[dict | DynamicAnalysisOutput], indicators: dict, mitre_techniques: list) -> list[dict]:
@@ -1237,14 +1278,9 @@ def _build_ai_analysis(
     narrative = final_state.get("narrative_summary") or ""
     is_fallback = "[FALLBACK" in narrative or "Groq call failed" in narrative
 
-    # Extract investigation summary if available
-    inv_summary = investigation_output.get("investigation_summary") or {}
-    exec_summary = (
-        inv_summary.get("executive_summary")
-        or inv_summary.get("summary")
-        or narrative
-        or "Insufficient evidence available for AI analysis summary."
-    )
+    # Narrative output has already passed the evidence-scoped validator.
+    # Investigation summaries are not normalized evidence and must not render.
+    exec_summary = narrative or "Analysis completed; consult the normalized evidence sections for findings."
 
     # Enrich executive summary with confirmed MalwareBazaar intelligence
     if malware_bazaar and malware_bazaar.get("found"):
@@ -1257,17 +1293,27 @@ def _build_ai_analysis(
             exec_summary = f"{mb_desc}. " + exec_summary
 
     # Extract recommendations with evidence-based synthesis
-    raw_recs = investigation_output.get("recommendations", [])
-    extracted_recs: list[str] = []
-    for r in raw_recs:
-        if isinstance(r, dict):
-            desc = r.get("description") or r.get("action") or str(r)
-            extracted_recs.append(desc)
-        else:
-            extracted_recs.append(str(r))
-
     dyn_out = final_state.get("dynamic_output")
     dyn_dict = dyn_out.model_dump() if hasattr(dyn_out, "model_dump") else (dyn_out if isinstance(dyn_out, dict) else None)
+
+    # Recommendations are actions for the investigator, not descriptions of
+    # sample behavior. Accept only imperative, non-assertive advice from the
+    # investigation output; all narrative and behavior fields come from the
+    # evidence-validated narrative above.
+    raw_recs = investigation_output.get("recommendations", [])
+    action_verbs = ("check ", "review ", "monitor ", "retain ", "contact ", "enable ",
+                    "update ", "revoke ", "quarantine ", "isolate ", "block ",
+                    "audit ", "inspect ", "enforce ", "continue ", "ensure ",
+                    "remove ", "clean ", "sinkhole ")
+    assertion_terms = ("sample did", "sample has", "was observed", "was executed",
+                       "identified as", "malware established", "attacker accessed")
+    safe_recs: list[str] = []
+    for recommendation in raw_recs:
+        text = (recommendation.get("description") or recommendation.get("action") or "") if isinstance(recommendation, dict) else str(recommendation)
+        text = str(text).strip()
+        low = text.casefold()
+        if low.startswith(action_verbs) and not any(term in low for term in assertion_terms):
+            safe_recs.append(text)
 
     recommendations = _generate_recommendations(
         verdict=threat_assessment.get("verdict", "SUSPICIOUS"),
@@ -1276,7 +1322,7 @@ def _build_ai_analysis(
         mitre=final_state.get("mitre_techniques", []),
         network_indicators=network_indicators,
         dynamic_output=dyn_dict,
-        existing_recommendations=extracted_recs,
+        existing_recommendations=safe_recs,
         platform=final_state.get("platform") or (final_state.get("static_output").platform if final_state.get("static_output") else None),
         static_persistence_paths=static_persistence_paths,
         intel_family=(malware_bazaar or {}).get("signature") if malware_bazaar and malware_bazaar.get("found") else None,
@@ -1323,53 +1369,21 @@ def _build_ai_analysis(
         for t in final_state.get("mitre_techniques", [])
     ]
 
-    inv_malware_exp = investigation_output.get("malware_explanation") or {}
-    if isinstance(inv_malware_exp, dict):
-        malware_behavior = (
-            inv_malware_exp.get("technical_details")
-            or inv_malware_exp.get("summary")
-            or inv_malware_exp.get("behavior_description")
-            or inv_malware_exp.get("description")
-        )
-    elif hasattr(inv_malware_exp, "technical_details"):
-        malware_behavior = inv_malware_exp.technical_details or getattr(inv_malware_exp, "summary", None)
-    else:
-        malware_behavior = None
+    malware_behavior = narrative or "No behavior description is available; refer to the static and dynamic evidence sections."
 
-    if not malware_behavior:
-        caps = final_state.get("capability_tags") or []
-        mitre = final_state.get("mitre_techniques") or []
-        cap_names = [
-            c.capability if hasattr(c, "capability") else c.get("capability", "")
-            for c in caps
-            if (getattr(c, "capability", None) or (isinstance(c, dict) and c.get("capability")))
-        ]
-        mitre_names = [
-            t.technique_name if hasattr(t, "technique_name") else t.get("technique_name", "")
-            for t in mitre
-            if (getattr(t, "technique_name", None) or (isinstance(t, dict) and t.get("technique_name")))
-        ]
-        behavior_parts = []
-        if cap_names:
-            behavior_parts.append(f"Identified malicious behaviors: {', '.join(cap_names).replace('_', ' ')}.")
-        if mitre_names:
-            behavior_parts.append(f"Observed MITRE ATT&CK techniques: {', '.join(mitre_names[:4])}.")
-        if not behavior_parts and narrative and not is_fallback:
-            behavior_parts.append(narrative)
-        malware_behavior = " ".join(behavior_parts) if behavior_parts else None
-
-    inv_exfil = investigation_output.get("exfiltration_analysis") or {}
-    if isinstance(inv_exfil, dict):
-        evidence_correlation = (
-            inv_exfil.get("risk_assessment")
-            or inv_exfil.get("timing_patterns")
-            or inv_exfil.get("evidence_summary")
-            or inv_exfil.get("description")
-        )
-    elif hasattr(inv_exfil, "risk_assessment"):
-        evidence_correlation = inv_exfil.risk_assessment or getattr(inv_exfil, "timing_patterns", None)
-    else:
-        evidence_correlation = None
+    dyn_dict = final_state.get("dynamic_output")
+    dyn_dict = dyn_dict.model_dump() if hasattr(dyn_dict, "model_dump") else (dyn_dict if isinstance(dyn_dict, dict) else {})
+    observed_count = sum(len(dyn_dict.get(key) or []) for key in (
+        "network_connections", "process_tree", "api_calls", "dns_queries",
+        "files_written", "registry_changes", "persistence_artifacts",
+    ))
+    evidence_correlation = (
+        f"{observed_count} dynamic observation(s) are present in the normalized report."
+        if observed_count and (dyn_dict.get("dynamic_status") or dyn_dict.get("status")) not in {
+            "unavailable", "not_supported", "no_behavior_observed", "failed", "timed_out", "incomplete"
+        }
+        else None
+    )
 
     return {
         "executive_summary": exec_summary,
@@ -1457,11 +1471,7 @@ async def analyze_and_save(
 
             # Build ExtractedStrings
             es_raw = static_part.get("extracted_strings") or {}
-            extracted_strings = ExtractedStrings(
-                urls=es_raw.get("urls") or [],
-                ips=es_raw.get("ips") or [],
-                suspicious_keywords=es_raw.get("suspicious_keywords") or [],
-            )
+            extracted_strings = _validated_extracted_strings(es_raw)
 
             # Build AndroidManifestInfo if present
             android_manifest = None
@@ -1755,11 +1765,7 @@ async def analyze_and_save(
         )
         for m in raw_static.get("yara_matches", [])
     ]
-    extracted_strings = ExtractedStrings(
-        urls=raw_static.get("extracted_strings", {}).get("urls", []),
-        ips=raw_static.get("extracted_strings", {}).get("ips", []),
-        suspicious_keywords=raw_static.get("extracted_strings", {}).get("suspicious_keywords", []),
-    )
+    extracted_strings = _validated_extracted_strings(raw_static.get("extracted_strings", {}))
 
     # Preserve format-specific static evidence for the MITRE/capability rules.
     # The static engine already collected it in format_details; previously this

@@ -399,9 +399,9 @@ def _fallback_summary(
     cap_text = ", ".join(caps) if caps else "no confirmed malicious capability tags"
     v_imp = victim_impact or "medium"
     return (
-        f"[FALLBACK] This {static.platform} {static.file_type} binary exhibits {cap_text}. "
-        f"Verified risk score is {risk_score}/100 with {v_imp} victim impact based on verified forensic indicators. "
-        f"Immediate containment and perimeter network monitoring are advised."
+        f"[FALLBACK] Static analysis of this {static.platform} {static.file_type} sample identified these indicators: {cap_text}. "
+        f"The verified risk score is {risk_score}/100 with {v_imp} victim impact based on normalized evidence. "
+        f"This report does not establish runtime behavior unless it is listed in dynamic observations."
     )
 
 
@@ -478,6 +478,10 @@ def generate_narrative(
                     raw_text, static, dynamic, mitre, capabilities, risk_score, victim_impact, malware_bazaar
                 )
                 if is_valid and parsed:
+                    is_valid = _claims_are_evidence_scoped(
+                        parsed, static, dynamic, malware_bazaar
+                    )
+                if is_valid and parsed:
                     return _render_narrative(parsed["executive_summary"], parsed.get("technical_steps") or [])
 
                 # Attempt 2: Retry once with neutral framing + violation list
@@ -506,6 +510,10 @@ def generate_narrative(
                     retry_text, static, dynamic, mitre, capabilities, risk_score, victim_impact, malware_bazaar
                 )
                 if retry_valid and retry_parsed:
+                    retry_valid = _claims_are_evidence_scoped(
+                        retry_parsed, static, dynamic, malware_bazaar
+                    )
+                if retry_valid and retry_parsed:
                     return _render_narrative(retry_parsed["executive_summary"], retry_parsed.get("technical_steps") or [])
 
                 # Ungrounded / refusal / invalid after retry -> deterministic fallback
@@ -520,3 +528,45 @@ def generate_narrative(
 
     except Exception:
         return _fallback_summary(static, capabilities, risk_score, dynamic, victim_impact)
+
+
+def _claims_are_evidence_scoped(
+    parsed: dict,
+    static: StaticAnalysisOutput,
+    dynamic: Optional[DynamicAnalysisOutput],
+    malware_bazaar: Optional[dict],
+) -> bool:
+    """Reject runtime/intelligence claims unless that evidence class supports them."""
+    text = " ".join([str(parsed.get("executive_summary") or "")] + [
+        f"{step.get('action', '')} {step.get('evidence', '')}"
+        for step in (parsed.get("technical_steps") or []) if isinstance(step, dict)
+    ]).lower()
+    observations = dynamic if dynamic and (dynamic.dynamic_status or dynamic.status) not in {
+        "unavailable", "not_supported", "no_behavior_observed", "failed", "timed_out", "incomplete"
+    } else None
+    guarded = {
+        "c2": ("flagged_c2", "c2_endpoints_detected"),
+        "beacon": ("network_connections",),
+        "screenshot": ("screenshot",),
+        "persistence": ("persistence_artifacts",),
+        "registry": ("registry_changes",),
+        "process execution": ("process_tree",),
+        "executed a process": ("process_tree",),
+        "process was executed": ("process_tree",),
+        "sandbox traffic": ("network_connections", "dns_queries"),
+        "network traffic": ("network_connections", "dns_queries"),
+    }
+    for claim, fields in guarded.items():
+        if claim in text and (observations is None or not any(
+            getattr(observations, field, None) for field in fields
+        )):
+            return False
+    if any(term in text for term in ("family", "malwarebazaar", "vendor verdict", "provider verdict")):
+        if not malware_bazaar or not malware_bazaar.get("found"):
+            return False
+    # Static evidence may be discussed as indicators, never as runtime facts.
+    if observations is None and any(phrase in text for phrase in (
+        "was executed", "executed by the sample", "observed at runtime", "runtime behavior"
+    )):
+        return False
+    return True

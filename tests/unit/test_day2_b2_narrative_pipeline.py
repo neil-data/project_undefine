@@ -15,6 +15,7 @@ from analysis.scoring.orchestrator.schema import (
 from analysis.scoring.narrative_agent.narrative import (
     _validate_narrative,
     _render_narrative,
+    _claims_are_evidence_scoped,
     generate_narrative,
 )
 
@@ -59,6 +60,28 @@ def sample_dynamic():
 
 
 class TestNarrativeValidation:
+    @pytest.mark.parametrize("claim", [
+        "The sample established C2 communications and beaconing.",
+        "The sample persisted and captured screenshots.",
+        "The sample modified registry keys and executed a process.",
+        "Sandbox traffic showed outbound network activity.",
+    ])
+    def test_fabricated_runtime_claims_rejected_without_observed_dynamic_evidence(self, claim, sample_static):
+        static_only = DynamicAnalysisOutput(
+            status="not_supported", dynamic_status="unavailable", execution_mode="real",
+            failure_reason="Static only",
+        )
+        assert not _claims_are_evidence_scoped(
+            {"executive_summary": claim, "technical_steps": []},
+            sample_static, static_only, None,
+        )
+
+    def test_static_fallback_uses_indicator_wording(self, sample_static):
+        result = generate_narrative(sample_static, None, [], [], 30)
+        assert "Static analysis" in result
+        assert "exhibits" not in result
+        assert "runtime behavior" in result
+
     def test_valid_json_with_grounded_evidence_passes(self, sample_static, sample_dynamic):
         raw_json = """{
             "executive_summary": "The sample executed in sandbox and initiated outbound connection to 192.0.2.1:8080.",

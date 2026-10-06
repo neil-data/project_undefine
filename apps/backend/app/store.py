@@ -117,39 +117,27 @@ def _row_to_case(case_row, mitre_rows, cap_rows) -> dict:
         ],
     }
 
-    # Ensure ai_analysis and malware_behavior are always populated
+    # Preserve only evidence-backed narrative fields. Historical defaults here
+    # claimed runtime behavior on reports that had no such evidence.
     ai_data = res.get("ai_analysis")
-    if not ai_data or not isinstance(ai_data, dict):
+    if not isinstance(ai_data, dict):
         ai_data = {
-            "executive_summary": res["narrative_summary"] or "Forensic analysis completed with confirmed threat indicators.",
+            "executive_summary": res["narrative_summary"] or "Analysis completed; consult the normalized evidence sections for findings.",
             "malware_behavior": None,
-            "evidence_correlation": "Static and behavioral indicators correlate with malicious payload characteristics.",
+            "evidence_correlation": None,
             "threat_classification": res["status"],
             "network_interpretation": None,
             "geoip_interpretation": None,
             "mitre_techniques_explained": [f"{m['technique_id']}: {m['technique_name']}" for m in res["mitre_techniques"] if m.get("technique_name")],
-            "confidence": 85,
+            "confidence": 0,
             "reasoning": res["narrative_summary"] or "",
-            "recommendations": [
-                "Quarantine affected systems and block network IoCs.",
-                "Review credential access logs for compromised accounts.",
-                "Inspect persistence mechanisms and remove unauthorized packages."
-            ],
-            "ai_available": True,
-            "fallback_used": False,
+            "recommendations": [],
+            "ai_available": False,
+            "fallback_used": True,
         }
 
     if not ai_data.get("malware_behavior"):
-        caps = [c["capability"].replace("_", " ") for c in res["capability_tags"] if c.get("capability")]
-        mitres = [m["technique_name"] for m in res["mitre_techniques"] if m.get("technique_name")]
-        b_parts = []
-        if caps:
-            b_parts.append(f"Identified malicious behaviors: {', '.join(caps)}.")
-        if mitres:
-            b_parts.append(f"Observed MITRE ATT&CK techniques: {', '.join(mitres[:4])}.")
-        if not b_parts and res["narrative_summary"]:
-            b_parts.append(res["narrative_summary"])
-        ai_data["malware_behavior"] = " ".join(b_parts) if b_parts else "Dynamic and static indicators demonstrate unauthorized system access and credential harvesting."
+        ai_data["malware_behavior"] = res.get("narrative_summary") or "No behavior claim is available; review the static and dynamic evidence sections."
 
     res["ai_analysis"] = ai_data
     return res

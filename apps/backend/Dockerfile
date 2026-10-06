@@ -17,6 +17,7 @@ COPY data data
 COPY sandbox sandbox
 COPY providers providers
 
+# The static engine is stored directly under analysis/static/static_analysis.
 ENV PYTHONPATH=/app:/app/apps:/app/packages:/app/analysis:/app/analysis/static:/app/providers
 EXPOSE 8000
 

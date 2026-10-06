@@ -146,21 +146,8 @@ async def _run_hybrid_analysis_dynamic(
             target_architecture=arch_str,
         )
 
-    # 1. Check Hybrid Analysis API Key
-    ha_key = (os.environ.get("HYBRID_ANALYSIS_API_KEY") or "").strip().strip('"').strip("'")
-    if not ha_key:
-        return DynamicAnalysisOutput(
-            sample_id=file_name,
-            available=False,
-            execution_mode="real",
-            status="unavailable",
-            dynamic_status="unavailable",
-            failure_reason="HYBRID_ANALYSIS_API_KEY is not configured",
-            message="Dynamic analysis not performed: HYBRID_ANALYSIS_API_KEY is not configured",
-            target_architecture=arch_str,
-        )
-
-    # 2. Architecture & Platform Gating (Day 6 invariant: ZERO fabricated dynamic evidence)
+    # Architecture & platform gates run before checking provider credentials so
+    # static-only formats complete without depending on dynamic services.
     plat_raw = str(platform or "").lower()
     ft_raw = str(file_type or "").lower()
 
@@ -177,7 +164,34 @@ async def _run_hybrid_analysis_dynamic(
             target_architecture=arch_str,
         )
 
-    # Non-x86_64 ELF is static-only
+    # Android APK
+    if ft_raw in ("apk", "android") or plat_raw == "android":
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="not_supported",
+            dynamic_status="unavailable",
+            failure_reason="APK dynamic analysis not configured",
+            message="Dynamic analysis not performed: APK dynamic analysis not configured",
+            target_architecture=arch_str,
+        )
+
+    ha_key = (os.environ.get("HYBRID_ANALYSIS_API_KEY") or "").strip().strip('"').strip("'")
+    if not ha_key:
+        return DynamicAnalysisOutput(
+            sample_id=file_name,
+            available=False,
+            execution_mode="real",
+            status="unavailable",
+            dynamic_status="unavailable",
+            failure_reason="HYBRID_ANALYSIS_API_KEY is not configured",
+            message="Dynamic analysis not performed: HYBRID_ANALYSIS_API_KEY is not configured",
+            target_architecture=arch_str,
+        )
+
+    # Non-x86_64 ELF is static-only. Keep this provider-availability check
+    # after the explicit Mach-O/APK gates, which never need a provider.
     if ft_raw == "elf" or plat_raw == "linux":
         arch_lower = arch_str.lower()
         if not ("x86_64" in arch_lower or "amd64" in arch_lower or "x64" in arch_lower):
@@ -192,19 +206,6 @@ async def _run_hybrid_analysis_dynamic(
                 message=f"Dynamic analysis not performed: {reason}",
                 target_architecture=arch_str,
             )
-
-    # Android APK
-    if ft_raw in ("apk", "android") or plat_raw == "android":
-        return DynamicAnalysisOutput(
-            sample_id=file_name,
-            available=False,
-            execution_mode="real",
-            status="not_supported",
-            dynamic_status="unavailable",
-            failure_reason="APK dynamic analysis not configured",
-            message="Dynamic analysis not performed: APK dynamic analysis not configured",
-            target_architecture=arch_str,
-        )
 
     try:
         adapter = HybridAnalysisAdapter(api_key=ha_key, timeout=min(timeout_seconds, 20))

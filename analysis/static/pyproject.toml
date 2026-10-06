@@ -22,4 +22,4 @@ test = ["pytest>=8"]
 static-analysis = "static_analysis.entrypoint:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]

@@ -1,6 +1,7 @@
 {
   "framework": "vite",
-  "buildCommand": "cd apps/frontend && npm install && npm run build",
+  "installCommand": "cd apps/frontend && npm ci",
+  "buildCommand": "cd apps/frontend && npm run build",
   "outputDirectory": "apps/frontend/dist",
   "cleanUrls": true,
   "rewrites": [

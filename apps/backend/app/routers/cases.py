@@ -57,6 +57,7 @@ _ALLOWED_EXTENSIONS = {
     ".bson": "bson",
 }
 _MAX_UPLOAD_BYTES = int(__import__("os").environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024
+_ANALYSIS_PIPELINE_TIMEOUT_SECONDS = max(60, int(os.environ.get("ANALYSIS_PIPELINE_TIMEOUT_SECONDS", "300")))
 
 
 COMMON_ZIP_PASSWORDS = [
@@ -207,16 +208,24 @@ async def _run_analysis_pipeline(
 
         await ps.update_job(analysis_id, status=ps.STATIC_ANALYSIS, stage="Running static analysis and agent correlation")
 
-        case_data = await analyze_and_save(
-            file_path,
-            event_type="static_analysis_complete",
-            extra_meta={
-                "original_filename": original_filename,
-                "mime_type": mime_type,
-                "analysis_status": ps.STATIC_ANALYSIS,
-                "user_email": user_email,
-            },
-        )
+        try:
+            case_data = await asyncio.wait_for(
+                analyze_and_save(
+                    file_path,
+                    event_type="static_analysis_complete",
+                    extra_meta={
+                        "original_filename": original_filename,
+                        "mime_type": mime_type,
+                        "analysis_status": ps.STATIC_ANALYSIS,
+                        "user_email": user_email,
+                    },
+                ),
+                timeout=_ANALYSIS_PIPELINE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(
+                f"Static analysis/report pipeline exceeded {_ANALYSIS_PIPELINE_TIMEOUT_SECONDS} seconds"
+            ) from exc
         case_data["analysis_status"] = ps.DYNAMIC_ANALYSIS
         case_data["user_email"] = user_email
 

@@ -44,3 +44,6 @@ sandbox-host/artifacts/
 sandbox/host/artifacts/
 scratch/
 .ha_budget.json
+
+.vercel
+.env*.local
