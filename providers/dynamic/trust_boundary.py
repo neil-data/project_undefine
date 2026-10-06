@@ -63,7 +63,8 @@ def normalize_provider_result(provider, raw: Any, task_id, environment, executed
         if not isinstance(limits, list) or len(limits) > 50:
             raise ValueError("invalid limitations")
         observation.limitation = [_bounded_text(item) for item in limits]
-        provenance = {"provider": provider.name, "task_id": _bounded_text(task_id), "environment": _bounded_text(environment), "executed_by": _bounded_text(executed_by)}
+        provenance = {"provider": provider.name, "task_id": _bounded_text(task_id) if behavior and any(behavior.values()) else None,
+                      "environment": _bounded_text(environment), "executed_by": _bounded_text(executed_by)}
         cap = max(0.0, min(1.0, float(os.environ.get("PROVIDER_DYNAMIC_MAX_CONFIDENCE", "0.85"))))
         findings = []
         from analysis.scoring.orchestrator.schema import EvidenceFinding

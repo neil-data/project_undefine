@@ -79,8 +79,10 @@ class TestIoCClassifier:
             "extracted_strings": {"ips": [], "urls": ["C:\\symbols\\agent.pdb", "sample.exe -quiet"]},
             "explained_strings": [
                 {"value": "System.Net.Http.HttpClient", "type": "domain"},
+                {"value": "Microsoft.Extensions.Logging.Logger", "type": "domain"},
                 {"value": "ExampleCorp.Setup.nsis", "type": "domain"},
-                {"value": "2.4.1.0", "type": "domain"},
+                {"value": "7.4.8.0", "type": "domain"},
+                {"value": "NSIS.InstallUtil", "type": "domain"},
             ],
         })
         assert extracted_network["domains"] == []
@@ -90,19 +92,34 @@ class TestIoCClassifier:
             {"extracted_strings": {}}, None,
             {
                 "ips": [],
-                "domains": ["System.Net.Http.HttpClient", "ExampleCorp.Setup.nsis", "2.4.1.0"],
+                "domains": ["System.Net.Http.HttpClient", "Microsoft.Extensions.Logging.Logger", "ExampleCorp.Setup.nsis", "7.4.8.0", "NSIS.InstallUtil"],
                 "urls": ["C:\\symbols\\agent.pdb", "sample.exe -quiet"],
             },
         )
         values = {item["indicator"] for item in report_iocs}
         assert not values.intersection({
-            "System.Net.Http.HttpClient", "ExampleCorp.Setup.nsis", "2.4.1.0",
+            "System.Net.Http.HttpClient", "Microsoft.Extensions.Logging.Logger", "ExampleCorp.Setup.nsis", "7.4.8.0", "NSIS.InstallUtil",
             "C:\\symbols\\agent.pdb", "sample.exe -quiet",
         })
         assert all(item["type"] in {
             "HASH_SHA256", "HASH_SHA1", "HASH_MD5", "HASH", "IP", "DOMAIN",
             "URL", "SYSTEM_INFRASTRUCTURE", "PERSISTENCE_PATH", "DROPPED_FILE",
         } for item in report_iocs)
+
+    def test_production_report_keeps_real_hash_ip_domain_and_url_iocs(self):
+        digest = "4faccd95d23724469122505b90cdfd280ff552528be38e73e2b969be90eb7380"
+        report_iocs = _build_ioc_intelligence(
+            {"sha256": digest, "md5": "d60c4203ef9e3be946333d0c76f1800d", "sha1": "1c5573f49aa8c9703f1b9f2ec6bfc498c87ccf08", "extracted_strings": {}},
+            None,
+            {"ips": ["8.8.8.8"], "domains": ["example.com"], "urls": ["https://example.com/a"]},
+        )
+        by_value = {item["indicator"]: item for item in report_iocs}
+        assert by_value[digest]["type"] == "HASH_SHA256"
+        assert by_value["d60c4203ef9e3be946333d0c76f1800d"]["type"] == "HASH_MD5"
+        assert by_value["1c5573f49aa8c9703f1b9f2ec6bfc498c87ccf08"]["type"] == "HASH_SHA1"
+        assert by_value["8.8.8.8"]["type"] == "SYSTEM_INFRASTRUCTURE"
+        assert by_value["example.com"]["type"] == "DOMAIN"
+        assert by_value["https://example.com/a"]["type"] == "URL"
 
     def test_public_dns_resolvers_classified_as_system_infrastructure(self):
         for resolver in ["8.8.8.8", "1.1.1.1", "9.9.9.9"]:

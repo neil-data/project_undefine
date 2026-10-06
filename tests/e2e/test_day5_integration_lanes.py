@@ -83,8 +83,8 @@ def make_minimal_static_state(file_type="elf", sha256=None, endpoints=()):
 
 class TestDay5IntegrationLanes:
 
-    def test_lane_elf_x86_64_with_behavior_and_correlation(self):
-        """Lane 1: ELF x86_64 with dynamic behavior feeds evidence and correlates with static endpoint."""
+    def test_lane_elf_hash_lookup_behavior_shape_is_not_execution(self):
+        """Lane 1: behavior-shaped hash lookup data cannot be promoted to execution evidence."""
         adapter = HybridAnalysisAdapter(api_key="mock-ha-key")
         c2_domain = "observed-c2.malicious.test"
 
@@ -111,23 +111,18 @@ class TestDay5IntegrationLanes:
                 static_endpoints=state["static_output"].extracted_strings.urls,
             )
 
-            # Assert Trust Boundary & Evidence
+            # Hash lookup is intelligence, not a submitted execution task.
             assert res.state == DynamicState.COMPLETED
-            assert res.observation.has_behavior()
-            assert any(f.source == "provider:hybrid_analysis" and f.source_type == "DYNAMIC" for f in res.findings)
-            assert res.provenance["task_id"] == "ha-task-1234"
-
-            # Assert Correlation
-            corroborated = [c for c in res.correlations if c.get("endpoint") == c2_domain]
-            assert len(corroborated) >= 1
-            assert all(c["status"] == "corroborated" for c in corroborated)
+            assert not res.observation.has_behavior()
+            assert not res.findings
+            assert res.verdict is not None and res.verdict.source_type == "INTEL"
+            assert res.provenance["task_id"] is None
+            assert res.correlations == []
 
             # Enrich Orchestrator
             enriched = enrich_orchestrator_state(state, res)
-            assert enriched["dynamic_output"] is not None
-            assert enriched["dynamic_output"].provider == "hybrid_analysis"
-            assert enriched["dynamic_output"].task_id == "ha-task-1234"
-            assert "Provider hybrid_analysis task ha-task-1234 reported behavior" in enriched["narrative_summary"]
+            assert enriched["dynamic_output"] is None
+            assert "provider verdict" in enriched["narrative_summary"].lower()
 
             # Cache verification: calling run again returns cached result without lookup
             cached_res = pipeline.run(
@@ -135,7 +130,7 @@ class TestDay5IntegrationLanes:
                 platform="ELF",
                 architecture="x86_64",
             )
-            assert cached_res.provenance["task_id"] == "ha-task-1234"
+            assert cached_res.provenance["task_id"] is None
 
     def test_lane_unsupported_elf_arch(self):
         """Lane 2: Unsupported ELF architecture returns NOT_SUPPORTED_PLATFORM without unhandled exception."""
@@ -173,6 +168,7 @@ class TestDay5IntegrationLanes:
             assert len(res.findings) == 0  # Zero dynamic findings
             assert res.verdict is not None
             assert res.verdict.source_type == "INTEL"
+            assert res.provenance["task_id"] is None
 
             enriched = enrich_orchestrator_state(state, res)
             # Dynamic output remains None (no behavior observed)

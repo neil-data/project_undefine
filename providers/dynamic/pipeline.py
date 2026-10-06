@@ -66,6 +66,62 @@ class DynamicAnalysisPipeline:
         self.cache.put(sha256, result)
         return result
 
+    def run_execution(self, sample_path, sha256, platform, architecture, timeout_seconds=90, static_endpoints=()):
+        """Submit and normalize an actual provider execution (never hash lookup)."""
+        provider_name = select_provider(platform, architecture)
+        if provider_name is None:
+            return unsupported_platform_result(platform, architecture)
+        provider = self.providers.get(provider_name)
+        if provider is None or not hasattr(provider, "execute_sample"):
+            return NormalizedProviderResult(DynamicState.PROVIDER_UNAVAILABLE, reason="provider execution unavailable",
+                narrative="Dynamic analysis not performed: provider execution unavailable")
+        raw = provider.execute_sample(sample_path, platform, architecture, timeout_seconds=timeout_seconds)
+        state = raw.get("state") if isinstance(raw, dict) else None
+        if state != DynamicState.COMPLETED.value:
+            try:
+                failure_state = DynamicState(state)
+            except (ValueError, TypeError):
+                failure_state = DynamicState.INVALID_RESPONSE
+            reason = raw.get("reason") if isinstance(raw, dict) else "invalid provider execution response"
+            result = NormalizedProviderResult(failure_state, reason=reason or failure_state.value.lower().replace("_", " "),
+                narrative=f"Dynamic analysis not performed: {reason or failure_state.value.lower().replace('_', ' ')}",
+                provenance={"provider": provider.name, "task_id": raw.get("task_id") if isinstance(raw, dict) else None})
+            result.report_line = render_dynamic_result(result)
+            return result
+        task_id = raw.get("task_id")
+        if not isinstance(task_id, str) or not task_id.strip():
+            return NormalizedProviderResult(DynamicState.INVALID_RESPONSE, reason="provider completed without a task ID",
+                narrative="Dynamic analysis not performed: provider completed without a task ID")
+        normalized = {key: raw[key] for key in ("state", "behavior", "verdict", "score") if key in raw}
+        result = normalize_provider_result(provider, normalized, task_id,
+            raw.get("environment") or str(raw.get("environment_id") or "HA environment"), executed_by="Hybrid Analysis task report")
+        if result.state == DynamicState.COMPLETED and not result.observation.has_behavior():
+            result.state = DynamicState.INVALID_RESPONSE
+            result.reason = "completed HA task contained no normalized behavioral evidence"
+            result.narrative = "Dynamic analysis not performed: completed HA task contained no behavioral evidence"
+            result.findings = []
+            result.verdict = None
+        if result.state != DynamicState.COMPLETED:
+            result.report_line = render_dynamic_result(result)
+            return result
+        static = set(static_endpoints)
+        from packages.shared.ioc_classifier import IoCClassifier
+        for row in result.observation.network + result.observation.dns:
+            for key in ("domain", "ip", "url", "name", "endpoint"):
+                indicator = row.get(key)
+                if isinstance(indicator, str) and indicator:
+                    result.classified_iocs.append(IoCClassifier.classify(indicator,
+                        hint_type={"domain": "domain", "ip": "ip", "url": "url"}.get(key),
+                        source=f"provider:{provider.name}", source_type="DYNAMIC", evidence_state="OBSERVED", is_dynamic_observed=True))
+        result.correlations = []
+        for row in result.observation.network + result.observation.dns:
+            endpoint = row.get("domain") or row.get("ip") or row.get("name") or row.get("endpoint")
+            if isinstance(endpoint, str) and endpoint in static:
+                result.correlations.append({"endpoint": endpoint, "status": "corroborated"})
+        self.evidence_store.extend(result.findings)
+        result.report_line = render_dynamic_result(result)
+        return result
+
     def run_static_output(self, static_output, **kwargs):
         platform, architecture = detect_platform(static_output)
         return self.run(static_output.sha256, platform, architecture, **kwargs)

@@ -290,15 +290,25 @@ class TestA16GeoIPStatusDistinction:
 
         res = geoip.lookup_ip("45.33.32.156")
         assert res is not None
-        assert res.get("status") == "database_not_configured"
+        assert res.get("status") == "unavailable"
         assert res.get("database_configured") is False
         assert "database not configured" in res.get("message", "").lower()
 
     def test_a16_lookup_ip_private_ip(self):
         res = geoip.lookup_ip("192.168.1.1")
         assert res is not None
-        assert res.get("status") == "private"
-        assert res.get("country_iso") == "PRIVATE"
+        assert res.get("status") == "not_attempted"
+        assert res.get("country_iso") is None
+
+    def test_geoip_rejects_non_ip_without_lookup(self, monkeypatch):
+        monkeypatch.setattr(geoip, "lookup", lambda ip: pytest.fail("lookup called for non-IP"))
+        monkeypatch.setattr(geoip, "_lookup_http_fallback", lambda ip: pytest.fail("HTTP lookup called for non-IP"))
+        assert geoip.lookup_ip("example.com") is None
+        assert geoip.lookup_many(["System.Net.Http.HttpClient", "agent.pdb", "example.com"]) == []
+        from backend.app.analysis import _extract_network_indicators
+        indicators = _extract_network_indicators({"extracted_strings": {"ips": [], "urls": []},
+            "explained_strings": [{"value": "7.4.8.0", "type": "domain"}, {"value": "System.Net.Http.HttpClient", "type": "domain"}]})
+        assert indicators["ips"] == []
 
     def test_a16_get_status(self, monkeypatch):
         monkeypatch.delenv("GEOIP_DB_PATH", raising=False)

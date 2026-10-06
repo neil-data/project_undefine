@@ -230,6 +230,7 @@ export function NetworkIntelligenceTab({ activeCase }: NetworkIntelligenceTabPro
                       </div>
                     </div>
                     <div className="space-y-1 text-[9px] font-mono text-[#6F6F6F]">
+                      <p><span className="text-[#A0A0A0]">GeoIP:</span> {g.status === "resolved" ? "Resolved" : g.status === "not_attempted" ? "Not attempted" : "Unavailable"}</p>
                       {g.country && <p><span className="text-[#A0A0A0]">Country:</span> {g.country} {g.country_iso ? `(${g.country_iso})` : ""}</p>}
                       {g.region && <p><span className="text-[#A0A0A0]">Region:</span> {g.region}</p>}
                       {g.city && <p><span className="text-[#A0A0A0]">City:</span> {g.city}</p>}

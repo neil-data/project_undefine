@@ -280,6 +280,7 @@ export function StaticAnalysisTab({ activeCase }: StaticAnalysisTabProps) {
                   <div className="space-y-2">
                     {(activeCase.geoIocs ?? []).map((g, i) => (
                       <div key={i} className="font-mono text-[10px] border-b border-[#222222]/40 pb-2 last:border-b-0 last:pb-0">
+                        <div className="text-[9px] text-[#A0A0A0]">GeoIP: {g.status === "resolved" ? "Resolved" : g.status === "not_attempted" ? "Not attempted" : "Unavailable"}</div>
                         <div className="flex justify-between items-center text-[11px] text-[#00c2ff] font-bold">
                           <span>{g.ip}</span>
                           <span className="text-[#A0A0A0] font-sans font-normal">

@@ -209,6 +209,16 @@ def _is_private_ip(ip: str) -> bool:
         return True
 
 
+def _is_valid_ip(ip: str) -> bool:
+    """Reject domains, version tuples, and malformed strings before any lookup."""
+    try:
+        import ipaddress
+        ipaddress.ip_address(str(ip).strip())
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def _lookup_http_fallback(ip: str) -> Optional[dict]:
     """Fallback lookup via ip-api.com when local MaxMind DB is unconfigured or misses the IP."""
     if _is_private_ip(ip):
@@ -246,7 +256,6 @@ def _lookup_http_fallback(ip: str) -> Optional[dict]:
                         "isp": data.get("isp"),
                         "is_hosting": data.get("hosting") or _is_hosting_org(org),
                         "is_proxy": data.get("proxy"),
-                        "threat_level": "LOW",
                         "disclaimer": GEOIP_DISCLAIMER,
                     }
     except Exception as e:
@@ -262,11 +271,15 @@ def lookup_ip(ip: str) -> Optional[dict]:
     - 'no_record': database is loaded but IP has no geolocation entry
     - 'resolved': successfully resolved
     """
+    if not _is_valid_ip(ip):
+        return None
     if _is_private_ip(ip):
-        res = lookup(ip)
-        if res:
-            res["status"] = "private"
-        return res
+        return {"ip": ip, "status": "not_attempted", "database_configured": False,
+                "country": None, "country_iso": None, "city": None, "region": None,
+                "postal_code": None, "timezone": None, "latitude": None,
+                "longitude": None, "accuracy_radius": None, "asn": None,
+                "asn_org": None, "isp": None, "is_hosting": None, "is_proxy": None,
+                "threat_level": None, "disclaimer": GEOIP_DISCLAIMER}
 
     _ensure_loaded()
     if _city_reader is None:
@@ -278,7 +291,7 @@ def lookup_ip(ip: str) -> Optional[dict]:
                 return fallback
         return {
             "ip": ip,
-            "status": "database_not_configured",
+            "status": "unavailable",
             "database_configured": False,
             "message": "GeoIP database not configured (set GEOIP_DB_PATH to GeoLite2-City.mmdb)",
             "country": None,
@@ -295,7 +308,7 @@ def lookup_ip(ip: str) -> Optional[dict]:
             "isp": None,
             "is_hosting": None,
             "is_proxy": None,
-            "threat_level": "LOW",
+            "threat_level": None,
             "disclaimer": GEOIP_DISCLAIMER,
         }
 
@@ -303,7 +316,7 @@ def lookup_ip(ip: str) -> Optional[dict]:
     if rec is None:
         return {
             "ip": ip,
-            "status": "no_record",
+            "status": "unavailable",
             "database_configured": True,
             "message": "No geolocation record found for IP in local database",
             "country": None,
@@ -320,7 +333,7 @@ def lookup_ip(ip: str) -> Optional[dict]:
             "isp": None,
             "is_hosting": None,
             "is_proxy": None,
-            "threat_level": "LOW",
+            "threat_level": None,
             "disclaimer": GEOIP_DISCLAIMER,
         }
 
@@ -333,27 +346,10 @@ def lookup_ip(ip: str) -> Optional[dict]:
 
 def lookup(ip: str) -> Optional[dict]:
     """Resolve one IP to detailed geolocation + ASN attribution, or None."""
+    if not _is_valid_ip(ip):
+        return None
     if _is_private_ip(ip):
-        return {
-            "ip": ip,
-            "country": "Internal / Private Network",
-            "country_iso": "PRIVATE",
-            "city": "Private Network",
-            "region": "RFC 1918 / RFC 4193",
-            "postal_code": None,
-            "timezone": "Local",
-            "latitude": None,
-            "longitude": None,
-            "accuracy_radius": None,
-            "asn": None,
-            "asn_org": "Internal / Private Network",
-            "isp": "Local Area Network",
-            "is_hosting": False,
-            "is_proxy": False,
-            "threat_level": "LOW",
-            "disclaimer": GEOIP_DISCLAIMER,
-            "status": "private",
-        }
+        return None
 
     _ensure_loaded()
     record = _lookup_city(ip)
@@ -380,7 +376,10 @@ def lookup_many(ips: list[str]) -> list[dict]:
         return []
     results = []
     seen = set()
-    for ip in ips:
+    for raw_ip in ips:
+        if not isinstance(raw_ip, str) or not _is_valid_ip(raw_ip):
+            continue
+        ip = raw_ip.strip()
         if ip in seen:
             continue
         seen.add(ip)

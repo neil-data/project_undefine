@@ -314,7 +314,7 @@ class TestBuildAiAnalysis:
         assert result["network_interpretation"] is None
 
     def test_geoip_interpretation_populated_when_geo_iocs(self):
-        geo = [{"ip": "1.2.3.4", "country": "India", "city": "Mumbai", "isp": "Jio", "is_hosting": False, "is_proxy": False}]
+        geo = [{"ip": "1.2.3.4", "status": "resolved", "country": "India", "city": "Mumbai", "isp": "Jio", "is_hosting": False, "is_proxy": False}]
         result = self._build(geo_iocs=geo)
         assert result["geoip_interpretation"] is not None
         assert "India" in result["geoip_interpretation"]

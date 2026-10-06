@@ -222,16 +222,29 @@ async def _run_hybrid_analysis_dynamic(
                 static_endpoints.extend(extracted.get("urls") or [])
 
         result = await asyncio.to_thread(
-            pipeline.run,
+            pipeline.run_execution,
+            sample_path=path_str,
             sha256=submitted_sha256,
             platform=norm_plat,
             architecture=norm_arch,
-            task_id=f"ha-{submitted_sha256[:12]}",
+            timeout_seconds=timeout_seconds,
             static_endpoints=tuple(static_endpoints),
         )
 
         if result.state == DynamicState.COMPLETED:
             has_behavior = result.observation.has_behavior()
+
+            if not has_behavior:
+                return DynamicAnalysisOutput(
+                    sample_id=file_name,
+                    available=False,
+                    execution_mode="real",
+                    status="unavailable",
+                    dynamic_status="unavailable",
+                    failure_reason="Hybrid Analysis execution task returned no behavioral evidence",
+                    message="Dynamic analysis not performed: the completed task report contained no behavioral evidence",
+                    target_architecture=arch_str,
+                )
 
             proc_tree = []
             for proc in result.observation.process:
@@ -288,7 +301,7 @@ async def _run_hybrid_analysis_dynamic(
                 status="completed",
                 dynamic_status="completed",
                 failure_reason=None,
-                task_id=result.provenance.get("task_id", f"ha-{submitted_sha256[:12]}"),
+                task_id=result.provenance.get("task_id"),
                 sandbox_url="https://www.hybrid-analysis.com",
                 message=msg,
                 target_architecture=arch_str,
@@ -308,8 +321,8 @@ async def _run_hybrid_analysis_dynamic(
                 execution_mode="real",
                 status="unavailable",
                 dynamic_status="unavailable",
-                failure_reason="No prior detonation report found in Hybrid Analysis",
-                message="Dynamic analysis (Hybrid Analysis): No prior detonation report found for this hash",
+                failure_reason=result.reason or "No Hybrid Analysis execution result",
+                message=result.report_line or "Dynamic analysis not performed: no Hybrid Analysis execution result",
                 target_architecture=arch_str,
             )
 
@@ -320,8 +333,9 @@ async def _run_hybrid_analysis_dynamic(
                 execution_mode="real",
                 status="failed",
                 dynamic_status="failed",
-                failure_reason="Hybrid Analysis request timed out",
-                message="Dynamic analysis failed: timeout",
+                failure_reason=result.reason or "Hybrid Analysis request timed out",
+                task_id=result.provenance.get("task_id"),
+                message=f"Dynamic analysis failed: {result.reason or 'timeout'}",
                 target_architecture=arch_str,
             )
 
@@ -346,6 +360,7 @@ async def _run_hybrid_analysis_dynamic(
                 status="unavailable",
                 dynamic_status="unavailable",
                 failure_reason=reason,
+                task_id=result.provenance.get("task_id"),
                 message=f"Dynamic analysis not performed: {reason}",
                 target_architecture=arch_str,
             )

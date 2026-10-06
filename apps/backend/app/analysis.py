@@ -246,29 +246,11 @@ def _reconcile_geoip_severity(geo_iocs: list[dict], ioc_records: list[dict]) -> 
     Ensure GeoIP threat_level and IoC threat classification never contradict.
     Hosting/proxy ASN characteristics alone are contextual metadata, not an automatic HIGH verdict.
     """
-    ioc_map = {}
-    for r in ioc_records:
-        ind = r.get("indicator")
-        if ind:
-            ioc_map[ind] = r
-
     reconciled = []
     for geo in geo_iocs:
-        g = dict(geo)
-        ip = g.get("ip")
-        ioc = ioc_map.get(ip)
-        if ioc:
-            cls = (ioc.get("classification") or "UNKNOWN").upper()
-            if cls == "MALICIOUS":
-                g["threat_level"] = "CRITICAL" if ioc.get("confidence") == "HIGH" else "HIGH"
-            elif cls == "SUSPICIOUS":
-                g["threat_level"] = "MEDIUM"
-            else:  # BENIGN, UNKNOWN
-                g["threat_level"] = "LOW"
-        else:
-            if g.get("threat_level") in (None, "HIGH"):
-                g["threat_level"] = "LOW"
-        reconciled.append(g)
+        # GeoIP is attribution only. Do not synthesize a threat verdict from
+        # unrelated IoC classification or fill absent provider fields.
+        reconciled.append(dict(geo))
     return reconciled
 
 
@@ -366,7 +348,11 @@ def _extract_network_indicators(raw_static: dict, dynamic_output: Optional[dict 
         etype = es.get("type", "")
         cat = es.get("category", "")
         if val:
-            if (etype == "ip" or re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", val)) and _is_valid_ipv4(val) and val not in static_ips:
+            # Honor an explicit domain classification before the IPv4-shaped
+            # heuristic: version tuples such as 7.4.8.0 are not IP evidence.
+            if etype == "domain" and _is_valid_domain(val) and val not in static_domains:
+                static_domains.append(val)
+            elif (etype == "ip" or (not etype and re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", val))) and _is_valid_ipv4(val) and val not in static_ips:
                 static_ips.append(val)
             elif (etype == "domain" or cat == "network_indicator") and _is_valid_domain(val) and val not in static_domains:
                 static_domains.append(val)
@@ -1345,15 +1331,16 @@ def _build_ai_analysis(
 
     # Geo-IP interpretation (from real lookups only)
     geoip_interpretation = None
-    if geo_iocs:
+    resolved_geo_iocs = [g for g in geo_iocs if g.get("status") == "resolved"]
+    if resolved_geo_iocs:
         countries = list(dict.fromkeys(
-            g.get("country") for g in geo_iocs if g.get("country")
+            g.get("country") for g in resolved_geo_iocs if g.get("country")
         ))
-        hosting = [g["ip"] for g in geo_iocs if g.get("is_hosting")]
-        proxy = [g["ip"] for g in geo_iocs if g.get("is_proxy")]
-        parts2: list[str] = [
-            f"Network actors span {len(countries)} country/countries: {', '.join(countries[:5])}."
-        ]
+        hosting = [g["ip"] for g in resolved_geo_iocs if g.get("is_hosting")]
+        proxy = [g["ip"] for g in resolved_geo_iocs if g.get("is_proxy")]
+        parts2: list[str] = []
+        if countries:
+            parts2.append(f"Network actors span {len(countries)} country/countries: {', '.join(countries[:5])}.")
         if hosting:
             parts2.append(f"{len(hosting)} IP(s) identified as cloud/hosting infrastructure.")
         if proxy:

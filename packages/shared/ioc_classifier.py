@@ -330,7 +330,30 @@ class IoCClassifier:
                 first_seen=first_seen,
             )
 
-        # 3. Base64 blobs -> BASE64, never FILE_PATH
+        # 3. File hashes must be recognized before the broad base64 heuristic:
+        # hexadecimal digests are valid base64 alphabet strings too.
+        if re.match(r"^[a-fA-F0-9]{64}$", ind):
+            has_mb = bool(malware_bazaar and malware_bazaar.get("found"))
+            return ClassifiedIoC(
+                indicator=ind, display_value=display, type=IOCType.HASH.value,
+                classification="MALICIOUS" if has_mb else "UNKNOWN",
+                confidence="HIGH" if has_mb else "LOW",
+                source="MalwareBazaar (abuse.ch)" if has_mb else src,
+                source_type="INTEL" if has_mb else stype,
+                evidence_state="INTEL" if has_mb else estate,
+                related_behavior=("Known malware family: " + str(malware_bazaar.get("signature") or "Confirmed")) if has_mb else "SHA-256 hash",
+                intel_corroborated=has_mb, first_seen=first_seen,
+            )
+        if re.match(r"^[a-fA-F0-9]{32}$", ind) or re.match(r"^[a-fA-F0-9]{40}$", ind):
+            return ClassifiedIoC(
+                indicator=ind, display_value=display, type=IOCType.HASH.value,
+                classification="UNKNOWN", confidence="LOW", source=src,
+                source_type=stype, evidence_state=estate,
+                related_behavior="File digest hash", intel_corroborated=False,
+                first_seen=first_seen,
+            )
+
+        # 4. Base64 blobs -> BASE64, never FILE_PATH
         if is_base64_blob(ind):
             return ClassifiedIoC(
                 indicator=ind,
@@ -346,7 +369,7 @@ class IoCClassifier:
                 first_seen=first_seen,
             )
 
-        # 4. System libraries -> LIBRARY (dependencies), not install paths
+        # 5. System libraries -> LIBRARY (dependencies), not install paths
         if is_system_library(ind):
             return ClassifiedIoC(
                 indicator=ind,
@@ -362,7 +385,7 @@ class IoCClassifier:
                 first_seen=first_seen,
             )
 
-        # 5. Archive / package entries -> PACKAGE_ENTRY
+        # 6. Archive / package entries -> PACKAGE_ENTRY
         if is_package_entry(ind):
             return ClassifiedIoC(
                 indicator=ind,
@@ -378,7 +401,7 @@ class IoCClassifier:
                 first_seen=first_seen,
             )
 
-        # 6. Symbols -> SYMBOL
+        # 7. Symbols -> SYMBOL
         if is_symbol(ind):
             return ClassifiedIoC(
                 indicator=ind,
@@ -390,37 +413,6 @@ class IoCClassifier:
                 source_type=stype,
                 evidence_state=estate,
                 related_behavior="Runtime or language package symbol",
-                intel_corroborated=False,
-                first_seen=first_seen,
-            )
-
-        # 7. File Hashes
-        if re.match(r"^[a-fA-F0-9]{64}$", ind):
-            has_mb = bool(malware_bazaar and malware_bazaar.get("found"))
-            return ClassifiedIoC(
-                indicator=ind,
-                display_value=display,
-                type=IOCType.HASH.value,
-                classification="MALICIOUS" if has_mb else "UNKNOWN",
-                confidence="HIGH" if has_mb else "LOW",
-                source="MalwareBazaar (abuse.ch)" if has_mb else src,
-                source_type="INTEL" if has_mb else stype,
-                evidence_state="INTEL" if has_mb else estate,
-                related_behavior=("Known malware family: " + str(malware_bazaar.get("signature") or "Confirmed")) if has_mb else "SHA-256 hash",
-                intel_corroborated=has_mb,
-                first_seen=first_seen,
-            )
-        if re.match(r"^[a-fA-F0-9]{32}$", ind) or re.match(r"^[a-fA-F0-9]{40}$", ind):
-            return ClassifiedIoC(
-                indicator=ind,
-                display_value=display,
-                type=IOCType.HASH.value,
-                classification="UNKNOWN",
-                confidence="LOW",
-                source=src,
-                source_type=stype,
-                evidence_state=estate,
-                related_behavior="File digest hash",
                 intel_corroborated=False,
                 first_seen=first_seen,
             )

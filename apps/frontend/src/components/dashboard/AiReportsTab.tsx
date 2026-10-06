@@ -601,6 +601,7 @@ export function AiReportsTab({ activeCase, examiner }: AiReportsTabProps) {
                             <div key={i} className="bg-[#090909] p-2.5 rounded border border-[#222222] font-mono text-[10px] flex justify-between items-center gap-4">
                               <span className="text-[#00c2ff] font-bold">{g.ip}</span>
                               <span className="text-[#A0A0A0] font-sans">
+                                {g.status === "resolved" ? "Resolved · " : g.status === "not_attempted" ? "Not attempted · " : "Unavailable · "}
                                 {[g.city, g.region, g.country].filter(Boolean).join(", ") || "location unavailable"}
                                 {g.isp ? ` · ${g.isp}` : ""}
                                 {g.is_proxy ? " · 🔴 Proxy" : ""}

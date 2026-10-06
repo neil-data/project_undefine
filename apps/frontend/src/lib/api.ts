@@ -51,6 +51,7 @@ export interface ExplainedStringDetail {
 
 export interface GeoIocDetail {
   ip: string;
+  status?: "resolved" | "unavailable" | "not_attempted" | string;
   country: string | null;
   country_iso: string | null;
   city: string | null;
