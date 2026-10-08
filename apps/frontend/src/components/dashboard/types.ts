@@ -1,4 +1,4 @@
-import { YaraMatchDetail, PackingInfo, ExplainedStringDetail, GeoIocDetail, NetworkIndicators, ThreatAssessment, AiAnalysisOutput } from "../../lib/api";
+import { YaraMatchDetail, PackingInfo, ExplainedStringDetail, GeoIocDetail, NetworkIndicators, ThreatAssessment, AiAnalysisOutput, BehaviorAnalysis } from "../../lib/api";
 
 export interface ThreatCase {
   id: string;
@@ -16,6 +16,7 @@ export interface ThreatCase {
   mitreTechniques?: any[];
   capabilityTags?: any[];
   sandboxResult?: any;
+  behaviorAnalysis?: BehaviorAnalysis | null;
   sha256?: string | null;
   md5?: string | null;
   sha1?: string | null;

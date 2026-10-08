@@ -33,6 +33,7 @@ from .models.api_models import (
     confidence_from_signals,
 )
 from . import geoip, store, malware_bazaar, sandbox
+from .behavior import infer_static_behaviors
 from packages.shared.ioc_classifier import (
     IoCClassifier,
     IOCType,
@@ -1882,6 +1883,9 @@ async def analyze_and_save(
     )
 
     dynamic_dict = dynamic_out.model_dump()
+    behavior_analysis = infer_static_behaviors(
+        {**raw_static, "malware_bazaar": mb_data}, dynamic_dict
+    )
     dynamic_analysis_result = {
         "available": True,
         "execution_mode": dynamic_dict.get("execution_mode", "real"),
@@ -1941,6 +1945,7 @@ async def analyze_and_save(
         "evidence_timeline": evidence_timeline,
         "risk_explanation": risk_explanation,
         "dynamic_analysis": dynamic_analysis_result,
+        "behavior_analysis": behavior_analysis,
         "malware_bazaar": mb_data,
         "threat_intelligence": _build_threat_intelligence_summary(raw_static.get("sha256") or static_output.sha256, mb_data),
     }

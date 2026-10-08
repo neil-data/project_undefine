@@ -128,6 +128,7 @@ export interface CaseDetail {
   mime_type?: string | null;
   analysis_status?: string | null;
   dynamic_analysis?: DynamicAnalysis | null;
+  behavior_analysis?: BehaviorAnalysis | null;
   // Part 2: Network Intelligence, Threat Assessment, AI Analysis
   network_indicators?: NetworkIndicators | null;
   threat_assessment?: ThreatAssessment | null;
@@ -150,6 +151,25 @@ export interface DynamicAnalysis {
   message?: string;
   task_id?: string | null;
   sandbox_url?: string | null;
+}
+
+export interface BehaviorFinding {
+  behavior: string;
+  assessment: string;
+  evidence: string[];
+  reason: string;
+  source: "Static Inference" | "Dynamic Analysis" | string;
+  runtime_verified: boolean;
+  evidence_state: "STATIC" | "OBSERVED" | string;
+}
+
+export interface BehaviorAnalysis {
+  status: string;
+  dynamic_status: string;
+  fallback_reason?: string | null;
+  message: string;
+  findings: BehaviorFinding[];
+  observed_findings: BehaviorFinding[];
 }
 
 export interface AnalysisStartResponse {

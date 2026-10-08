@@ -54,6 +54,7 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
   };
 
   const dyn: any = activeCase.sandboxResult ?? null;
+  const behavior = activeCase.behaviorAnalysis;
   const status = dyn?.status ?? "not_configured";
   const isConfigured = dyn?.available === true;
   const statusLabel: Record<string, string> = {
@@ -142,6 +143,38 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
             <span className="font-bold uppercase tracking-wider">Execution Failure:</span> Dynamic analysis failed: {dyn.failure_reason || dyn.message || "Unknown error during detonation."}
           </div>
         </div>
+      )}
+
+      {behavior && (
+        <section className="bg-[#111111] border border-[#222222] rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Behavioral Analysis</h4>
+            <span className="text-[10px] font-mono text-[#A0A0A0]">Dynamic status: {behavior.dynamic_status.replaceAll("_", " ")}</span>
+          </div>
+          <p className="text-xs text-[#A0A0A0]">{behavior.message}</p>
+          {behavior.fallback_reason && <p className="text-[11px] text-amber-300">Dynamic analysis unavailable: {behavior.fallback_reason}</p>}
+          {[...behavior.observed_findings, ...behavior.findings].length === 0 ? (
+            <p className="text-xs text-[#A0A0A0]">Insufficient evidence to infer specific behavior.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[...behavior.observed_findings, ...behavior.findings].map((finding, index) => (
+                <article key={`${finding.behavior}-${finding.source}-${index}`} className="border border-[#292929] rounded-md p-3 space-y-2">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-xs font-semibold text-white">{finding.behavior}</span>
+                    <span className={`text-[10px] uppercase font-mono ${finding.runtime_verified ? "text-[#16ff4d]" : "text-amber-300"}`}>
+                      {finding.runtime_verified ? "Observed" : finding.assessment}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[#A0A0A0]">{finding.reason}</p>
+                  <ul className="list-disc pl-4 space-y-1 text-[10px] text-[#C8C8C8]">
+                    {finding.evidence.map((item, evidenceIndex) => <li key={evidenceIndex} className="break-all">{item}</li>)}
+                  </ul>
+                  <div className="text-[9px] font-mono text-[#777]">Source: {finding.source} · Runtime verified: {finding.runtime_verified ? "Yes" : "No"}</div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {/* Main Sandbox Grid */}

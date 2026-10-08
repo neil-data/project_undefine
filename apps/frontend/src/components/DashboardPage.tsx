@@ -177,6 +177,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         explainedStrings: activeCaseDetail.explained_strings,
         geoIocs: activeCaseDetail.geo_iocs,
         sandboxResult: activeCaseDetail.dynamic_analysis ?? null,
+        behaviorAnalysis: activeCaseDetail.behavior_analysis ?? null,
         // Part 2: Network Intelligence, Threat Assessment, AI Analysis
         networkIndicators: activeCaseDetail.network_indicators ?? null,
         threatAssessment: activeCaseDetail.threat_assessment ?? null,
@@ -286,6 +287,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         explainedStrings: result.explained_strings,
         geoIocs: result.geo_iocs,
         sandboxResult: result.dynamic_analysis ?? null,
+        behaviorAnalysis: result.behavior_analysis ?? null,
         networkIndicators: result.network_indicators ?? null,
         threatAssessment: result.threat_assessment ?? null,
         aiAnalysis: result.ai_analysis ?? null,
