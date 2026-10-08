@@ -550,13 +550,30 @@ export function AiReportsTab({ activeCase, examiner }: AiReportsTabProps) {
                     <p className="text-xs leading-relaxed font-sans font-light">{activeCase.aiAnalysis.executive_summary}</p>
                   </div>
 
-                  {/* Malware Behavior */}
-                  {activeCase.aiAnalysis.malware_behavior && (
-                    <div className="space-y-2">
-                      <span className="text-[10px] text-[#6F6F6F] uppercase tracking-widest font-bold block">MALWARE BEHAVIOR</span>
-                      <p className="text-xs leading-relaxed font-sans font-light">{activeCase.aiAnalysis.malware_behavior}</p>
+                  {/* Behavior claims are rendered from the provenance-aware profile, not free-form narrative. */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-[#6F6F6F] uppercase tracking-widest font-bold">BEHAVIORAL ANALYSIS</span>
+                      <span className="text-[9px] font-mono text-[#A0A0A0]">{activeCase.behaviorAnalysis?.mode ?? "INSUFFICIENT EVIDENCE"}</span>
                     </div>
-                  )}
+                    <p className="text-xs leading-relaxed font-sans font-light">
+                      {activeCase.behaviorAnalysis?.message ?? "No evidence-backed behavior profile is available for this case."}
+                    </p>
+                    {(activeCase.behaviorAnalysis?.findings ?? []).map((finding, index) => (
+                      <div key={`${finding.category}-${index}`} className="bg-[#090909] border border-[#222222] rounded p-3 space-y-1.5">
+                        <div className="flex justify-between gap-2 text-[11px]">
+                          <span className="text-white font-semibold">{finding.behavior}</span>
+                          <span className="text-[#f4b400] font-mono">{finding.runtime_verified ? "RUNTIME VERIFIED" : finding.confidence}</span>
+                        </div>
+                        <p className="text-[9px] uppercase tracking-wide text-[#777]">Category: {finding.category.replaceAll("_", " ")}</p>
+                        <p className="text-[10px] text-[#A0A0A0]">{finding.rationale || finding.reason}</p>
+                        <ul className="list-disc pl-4 text-[10px] text-[#C8C8C8] space-y-1">
+                          {finding.evidence.map((item, evidenceIndex) => <li key={evidenceIndex} className="break-all">{item}</li>)}
+                        </ul>
+                        <p className="text-[9px] font-mono text-[#777]">{finding.source.replaceAll("_", " ")} · Runtime verified: {finding.runtime_verified ? "Yes" : "No"}</p>
+                      </div>
+                    ))}
+                  </div>
 
                   {/* Evidence Correlation */}
                   {activeCase.aiAnalysis.evidence_correlation && (

@@ -155,21 +155,29 @@ export interface DynamicAnalysis {
 
 export interface BehaviorFinding {
   behavior: string;
+  category: string;
+  confidence: "HIGH" | "MEDIUM" | "LOW" | string;
   assessment: string;
   evidence: string[];
   reason: string;
   source: "Static Inference" | "Dynamic Analysis" | string;
   runtime_verified: boolean;
   evidence_state: "STATIC" | "OBSERVED" | string;
+  rationale: string;
+  corroborated_by_static?: boolean;
+  corroborated_by_runtime?: boolean;
 }
 
 export interface BehaviorAnalysis {
   status: string;
+  mode: "RUNTIME VERIFIED" | "MIXED EVIDENCE" | "BEHAVIORAL SIMULATION" | "STATIC ASSESSMENT" | "INSUFFICIENT EVIDENCE" | string;
   dynamic_status: string;
   fallback_reason?: string | null;
   message: string;
   findings: BehaviorFinding[];
   observed_findings: BehaviorFinding[];
+  static_findings: BehaviorFinding[];
+  evidence_categories: string[];
 }
 
 export interface AnalysisStartResponse {

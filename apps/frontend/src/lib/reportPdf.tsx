@@ -361,10 +361,17 @@ export async function generateForensicPDF(
     );
     detailList("C2 endpoints", d.c2_endpoints_detected, listItemText);
     detailList("Process tree", d.process_tree, listItemText);
+    detailList("Commands", d.commands, listItemText);
+    detailList("HTTP requests", d.http_requests, listItemText);
     detailList("API calls", d.api_calls, listItemText);
     detailList("DNS queries", d.dns_queries, listItemText);
     detailList("Files written", d.files_written, listItemText);
+    detailList("Files created", d.files_created, listItemText);
+    detailList("Files modified", d.files_modified, listItemText);
+    detailList("Files deleted", d.files_deleted, listItemText);
     detailList("Registry changes", d.registry_changes, listItemText);
+    detailList("Services", d.services, listItemText);
+    detailList("IPC events", d.ipc_events, listItemText);
     detailList("Persistence artifacts", d.persistence_artifacts, listItemText);
     dynamicHtml = dynRows.join("<br>");
   } else {
@@ -812,6 +819,26 @@ export async function generateForensicPDF(
     <div>
       <h2>${t.dynamic}</h2>
       <div class="card">${dynamicHtml}</div>
+    </div>
+  `);
+
+  // Evidence-backed behavior findings keep static inference distinct from runtime telemetry.
+  const behavior = activeCase.behaviorAnalysis;
+  const behaviorRows = (behavior?.findings ?? []).map((finding: any) => `
+    <div style="border:1px solid #d8dee8;border-radius:4px;padding:8px;margin:6px 0;">
+      <b>${escapeHtml(finding.behavior)}</b> · ${escapeHtml(finding.confidence ?? finding.assessment ?? unavailable)} · ${escapeHtml(finding.category ?? "uncategorized")}
+      <div style="font-size:10px;color:#526071;margin-top:3px;">${escapeHtml(finding.rationale ?? finding.reason ?? "")}</div>
+      <div style="font-size:9px;color:#68778c;margin-top:3px;">Source: ${escapeHtml(String(finding.source ?? "unknown").replace(/_/g, " "))} · Runtime verified: ${finding.runtime_verified ? "Yes" : "No"}</div>
+      <ul style="margin:4px 0;padding-left:18px;">${(finding.evidence ?? []).map((item: string) => `<li style="font-size:9px;">${escapeHtml(item)}</li>`).join("")}</ul>
+    </div>
+  `).join("");
+  contentUnits.push(`
+    <div>
+      <h2>Behavioral Analysis</h2>
+      <div class="card"><b>Assessment mode:</b> ${escapeHtml(behavior?.mode ?? "INSUFFICIENT EVIDENCE")}<br>
+        ${escapeHtml(behavior?.message ?? "No evidence-backed behavior profile is available for this case.")}
+        ${behaviorRows || `<p class="muted">Insufficient evidence to infer specific behavior.</p>`}
+      </div>
     </div>
   `);
 

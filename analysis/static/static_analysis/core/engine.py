@@ -2,6 +2,7 @@ import dataclasses
 import gzip
 import logging
 import os
+import re
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -48,6 +49,22 @@ _MAX_UNPACK_RECURSION_DEPTH = 1
 # matching. Members arrive manifest-and-DEX first, so the bytes that carry the
 # behaviour are inside this bound even for a very large APK.
 _MAX_COMBINED_SCAN_BYTES = 32 * 1024 * 1024
+_BEHAVIOR_EVIDENCE_STRING = re.compile(
+    r"powershell|pwsh|cmd\.exe|wscript|cscript|/bin/(?:ba)?sh|busybox|"
+    r"createprocess|shellexecute|execve|processbuilder|runtime\.exec|"
+    r"winhttp|wininet|internetopen|internetconnect|ws2_32|libcurl|okhttp|"
+    r"createfile|writefile|deletefile|reg(?:open|set|create)key|currentversion|runonce|"
+    r"createservice|service.?control|schtasks|systemd|cron|startup|boot_completed|"
+    r"computername|username|getversionex|globalmemorystatus|enumprocess|uname|/proc/|"
+    r"credential|password|keylog|cookie|wallet|keystore|clipboard|lsass|cred(?:read|enumerate)|"
+    r"sedebugprivilege|token.?elevation|setuid|setgid|uac|virtualallocex|writeprocessmemory|"
+    r"createremotethread|ptrace|anti.?debug|debugger|isdebuggerpresent|anti.?vm|vmware|virtualbox|"
+    r"qemu|sandbox|hypervisor|obfuscat|packer|upx|cryptencrypt|bcrypt|aes|rsa|encrypt|decrypt|"
+    r"https?://|\b(?:\d{1,3}\.){3}\d{1,3}\b|[a-z0-9.-]+\.(?:com|net|org|io|ru|cn|top)\b|"
+    r"[a-z]:\\|/etc/|/tmp/|/var/tmp/|%appdata%|%temp%|android\.permission\.|"
+    r"sendbroadcast|startservice|bindservice|named pipe|d-bus|binder",
+    re.IGNORECASE,
+)
 _MAX_CONTAINER_MEMBER_BYTES = 200 * 1024 * 1024  # 200MB cap on any single extracted archive member
 
 _LOGGER = logging.getLogger(__name__)
@@ -304,6 +321,23 @@ class StaticAnalysisEngine:
                 source, yara_result
             )
 
+        # Preserve a bounded, parser-backed evidence set for the behavior
+        # fusion layer, including strings recovered from archive members.
+        behavior_evidence = []
+        seen_behavior_strings: set[str] = set()
+        for item in tuple(extracted_strings) + tuple(member_strings):
+            value = str(getattr(item, "value", "") or "").strip()
+            if not value or not _BEHAVIOR_EVIDENCE_STRING.search(value):
+                continue
+            identity = value.casefold()
+            if identity in seen_behavior_strings:
+                continue
+            seen_behavior_strings.add(identity)
+            string_type = getattr(item, "string_type", "unknown")
+            behavior_evidence.append({"value": value[:300], "type": str(string_type)})
+            if len(behavior_evidence) >= 300:
+                break
+
         # Step 11: Indicator extraction — validated, scoped, deduplicated
         ioc_result = self._iocs.extract(
             str(source), tuple(extracted_strings) + member_strings
@@ -364,6 +398,7 @@ class StaticAnalysisEngine:
                 "suspicious_keywords": keywords[:15],
             },
             "explained_strings": explained_strings,
+            "behavior_evidence": behavior_evidence,
             "format_details": format_details,
             "risk_score": classification.risk_score,
             "rule_risk_score": combined_risk_score.value,

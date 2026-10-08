@@ -110,6 +110,7 @@ class TestFormatDetailsRegression:
         rule_names = {m["rule_name"] for m in report["yara_matches"]}
 
         assert "builtin.dangerous_permissions" in rule_names
+        assert any("READ_SMS" in item["value"] for item in report["behavior_evidence"])
 
 
 class TestUnpackNeverBlocksThePipeline:

@@ -2,7 +2,6 @@ import * as React from "react";
 import { 
   Clock, 
   Shield, 
-  Network, 
   FileText, 
   Download, 
   CheckCircle, 
@@ -13,13 +12,11 @@ import {
   ChevronRight,
   ChevronDown,
   Info,
-  ExternalLink
 } from "lucide-react";
 import { ThreatCase } from "./types";
 import { CurrentUser } from "../../lib/api";
 import { AgencyLogo, loadAgencyLogoDataUrl } from "../AgencyLogo";
 import { jsPDF } from "jspdf";
-import { NetworkGraph } from "./NetworkGraph";
 
 interface InvestigationDashboardTabProps {
   activeCase: ThreatCase;
@@ -39,7 +36,7 @@ interface MalwareExplanation {
   summary: string;
   technical_details: string;
   capabilities_identified: string[];
-  confidence_level: number;
+  confidence_level?: number;
 }
 
 interface VictimImpact {
@@ -61,7 +58,7 @@ interface ExfiltrationAnalysis {
 }
 
 interface Recommendation {
-  priority: "immediate" | "high" | "medium" | "low";
+  priority: "immediate" | "high" | "medium" | "low" | "review";
   category: "containment" | "evidence" | "investigation" | "victim";
   action: string;
   rationale: string;
@@ -92,6 +89,8 @@ interface InvestigationOutput {
   malware_explanation: MalwareExplanation | null;
   victim_impact: VictimImpact | null;
   exfiltration_analysis: ExfiltrationAnalysis | null;
+  network_evidence: Array<{ indicator: string; source: string; runtime_verified: boolean }>;
+  behavior_findings: Array<{ behavior: string; category: string; confidence: string; evidence: string[]; source: string; runtime_verified: boolean }>;
   recommendations: Recommendation[];
   investigation_summary: InvestigationSummary | null;
   chain_verification: ChainVerification | null;
@@ -113,10 +112,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
     setLoading(true);
     setError(null);
     try {
-      // In a real implementation, this would fetch from the backend API
-      // For now, we'll create mock data based on the activeCase
-      const mockData: InvestigationOutput = createMockInvestigationData(activeCase);
-      setInvestigationData(mockData);
+      setInvestigationData(createEvidenceBoundInvestigationData(activeCase));
     } catch (err) {
       setError("Failed to load investigation data");
       console.error(err);
@@ -222,7 +218,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
       pdf.setTextColor(0, 0, 0);
       investigationData.timeline_events.slice(0, 10).forEach(event => {
         const lines = pdf.splitTextToSize(
-          `[${event.severity.toUpperCase()}] ${event.description}`,
+          `[${event.timestamp}] [${event.severity.toUpperCase()}] ${event.description}`,
           180
         );
         pdf.text(lines, 15, yPosition);
@@ -307,6 +303,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
     high: "bg-orange-950/40 text-[#f4b400] border-orange-500/20",
     medium: "bg-yellow-950/40 text-[#f4b400] border-yellow-500/20",
     low: "bg-green-950/40 text-[#16ff4d] border-green-500/20",
+    review: "bg-[#222222] text-[#A0A0A0] border-[#333333]",
   };
 
   return (
@@ -433,7 +430,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium text-white">{event.description}</p>
-                      <p className="text-xs text-[#6F6F6F] mt-1">{event.event_type}</p>
+                      <p className="text-xs text-[#6F6F6F] mt-1">{event.event_type} · {event.timestamp}</p>
                       {event.evidence.length > 0 && (
                         <div className="mt-2">
                           {event.evidence.map((ev, evIdx) => (
@@ -453,8 +450,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
       )}
 
       {/* IOC (Indicators of Compromise) */}
-      {(investigationData.exfiltration_analysis?.destinations.length > 0 ||
-        investigationData.victim_impact?.data_accessed.length > 0) && (
+      {investigationData.network_evidence.length > 0 && (
         <div className="bg-[#111111] border border-[#222222] rounded-lg overflow-hidden">
           <button
             onClick={() => toggleSection("ioc")}
@@ -462,7 +458,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
           >
             <div className="flex items-center">
               <Shield className="h-5 w-5 text-[#16ff4d] mr-3" />
-              <span className="font-semibold text-white">Indicators of Compromise</span>
+              <span className="font-semibold text-white">Indicators & Provenance</span>
             </div>
             {expandedSections.has("ioc") ? (
               <ChevronDown className="h-5 w-5 text-[#6F6F6F]" />
@@ -472,27 +468,14 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
           </button>
           {expandedSections.has("ioc") && (
             <div className="p-6 space-y-4">
-              {investigationData.exfiltration_analysis?.destinations && (
+              {investigationData.network_evidence.length > 0 && (
                 <div>
-                  <h4 className="font-semibold text-white mb-2">Exfiltration Destinations</h4>
+                  <h4 className="font-semibold text-white mb-2">Network and File Indicators</h4>
                   <div className="space-y-2">
-                    {investigationData.exfiltration_analysis.destinations.map((dest, idx) => (
-                      <div key={idx} className="flex items-center p-2 bg-red-950/40 border border-red-500/20 rounded">
-                        <Globe className="h-4 w-4 text-[#ff4040] mr-2" />
-                        <span className="text-sm text-[#A0A0A0]">{dest}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {investigationData.victim_impact?.data_accessed && (
-                <div>
-                  <h4 className="font-semibold text-white mb-2">Data Accessed</h4>
-                  <div className="space-y-2">
-                    {investigationData.victim_impact.data_accessed.map((data, idx) => (
-                      <div key={idx} className="flex items-center p-2 bg-yellow-950/40 border border-yellow-500/20 rounded">
-                        <FileText className="h-4 w-4 text-[#f4b400] mr-2" />
-                        <span className="text-sm text-[#A0A0A0]">{data}</span>
+                    {investigationData.network_evidence.map((item, idx) => (
+                      <div key={`${item.indicator}-${idx}`} className="flex items-center justify-between gap-3 p-2 bg-[#0d0d0d] border border-[#222222] rounded">
+                        <span className="flex items-center min-w-0"><Globe className="h-4 w-4 text-[#00c2ff] mr-2 shrink-0" /><span className="text-sm text-[#A0A0A0] break-all">{item.indicator}</span></span>
+                        <span className="text-[9px] font-mono text-[#777] shrink-0">{item.runtime_verified ? "RUNTIME VERIFIED" : item.source}</span>
                       </div>
                     ))}
                   </div>
@@ -543,56 +526,6 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
         </div>
       )}
 
-      {/* Network Graph */}
-      {investigationData.exfiltration_analysis && (
-        <div className="bg-[#111111] border border-[#222222] rounded-lg overflow-hidden">
-          <button
-            onClick={() => toggleSection("network")}
-            className="w-full px-6 py-4 flex items-center justify-between bg-[#171717] hover:bg-[#1d1d1d] transition-colors"
-          >
-            <div className="flex items-center">
-              <Network className="h-5 w-5 text-[#16ff4d] mr-3" />
-              <span className="font-semibold text-white">Network Graph</span>
-            </div>
-            {expandedSections.has("network") ? (
-              <ChevronDown className="h-5 w-5 text-[#6F6F6F]" />
-            ) : (
-              <ChevronRight className="h-5 w-5 text-[#6F6F6F]" />
-            )}
-          </button>
-          {expandedSections.has("network") && (
-            <div className="p-6">
-              <NetworkGraph
-                exfiltrationAnalysis={investigationData.exfiltration_analysis}
-                victimImpact={investigationData.victim_impact}
-                malwareInfo={{
-                  name: activeCase.name,
-                  type: activeCase.type,
-                }}
-              />
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-semibold text-white mb-2">Risk Assessment</h4>
-                  <div className={`inline-block px-3 py-1 rounded text-sm font-medium border ${
-                    investigationData.exfiltration_analysis.risk_assessment === "Critical"
-                      ? "bg-red-950/40 text-[#ff4040] border-red-500/20"
-                      : investigationData.exfiltration_analysis.risk_assessment === "High"
-                      ? "bg-orange-950/40 text-[#f4b400] border-orange-500/20"
-                      : "bg-yellow-950/40 text-[#f4b400] border-yellow-500/20"
-                  }`}>
-                    {investigationData.exfiltration_analysis.risk_assessment}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-white mb-2">Encryption Status</h4>
-                  <p className="text-sm text-[#A0A0A0]">{investigationData.exfiltration_analysis.encryption_status}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Evidence */}
       {investigationData.malware_explanation && (
         <div className="bg-[#111111] border border-[#222222] rounded-lg overflow-hidden">
@@ -621,7 +554,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
                 <p className="text-[#A0A0A0]">{investigationData.malware_explanation.technical_details}</p>
               </div>
               <div>
-                <h4 className="font-semibold text-white mb-2">Capabilities Identified</h4>
+                <h4 className="font-semibold text-white mb-2">Evidence-Backed Behavior Findings</h4>
                 <div className="flex flex-wrap gap-2">
                   {investigationData.malware_explanation.capabilities_identified.map((cap, idx) => (
                     <span key={idx} className="px-3 py-1 bg-cyan-950/40 text-[#00c2ff] rounded-full text-sm">
@@ -630,7 +563,17 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
                   ))}
                 </div>
               </div>
-              <div>
+              {investigationData.behavior_findings.map((finding, idx) => (
+                <div key={`${finding.category}-${idx}`} className="bg-[#090909] border border-[#222222] rounded p-3">
+                  <div className="flex justify-between gap-3 text-xs">
+                    <span className="text-white font-semibold">{finding.behavior}</span>
+                    <span className="text-amber-300 font-mono">{finding.runtime_verified ? "RUNTIME VERIFIED" : finding.confidence}</span>
+                  </div>
+                  <p className="text-[10px] text-[#777] mt-1">{finding.source.replaceAll("_", " ")} · Runtime verified: {finding.runtime_verified ? "Yes" : "No"}</p>
+                  <ul className="list-disc pl-4 mt-2 text-[10px] text-[#A0A0A0] space-y-1">{finding.evidence.map((item, evidenceIndex) => <li key={evidenceIndex} className="break-all">{item}</li>)}</ul>
+                </div>
+              ))}
+              {investigationData.malware_explanation.confidence_level !== undefined && <div>
                 <h4 className="font-semibold text-white mb-2">Confidence Level</h4>
                 <div className="flex items-center">
                   <div className="flex-1 bg-[#222222] rounded-full h-2 mr-3">
@@ -643,7 +586,7 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
                     {(investigationData.malware_explanation.confidence_level * 100).toFixed(0)}%
                   </span>
                 </div>
-              </div>
+              </div>}
             </div>
           )}
         </div>
@@ -693,108 +636,63 @@ export function InvestigationDashboardTab({ activeCase, examiner }: Investigatio
   );
 }
 
-// Helper function to create mock investigation data
-function createMockInvestigationData(activeCase: ThreatCase): InvestigationOutput {
+function createEvidenceBoundInvestigationData(activeCase: ThreatCase): InvestigationOutput {
+  const behaviorFindings = activeCase.behaviorAnalysis?.findings ?? [];
+  const timeline = (activeCase.evidenceTimeline ?? []).map((item: any) => {
+    const severity = String(item.severity ?? "INFO").toLowerCase();
+    return {
+      timestamp: item.timestamp_display ?? item.timestamp ?? "not recorded",
+      event_type: String(item.source ?? "Pipeline"),
+      description: String(item.event ?? item.indicator ?? "Evidence stage recorded"),
+      severity: severity === "critical" ? "critical" as const : severity === "high" || severity === "warning" ? "warning" as const : "info" as const,
+      evidence: item.indicator ? [String(item.indicator)] : [],
+    };
+  });
+  const networkEvidence = (activeCase.iocIntelligence ?? [])
+    .filter((item: any) => ["IP", "DOMAIN", "URL", "HASH"].includes(String(item.type ?? "").toUpperCase()))
+    .filter((item: any) => item.indicator)
+    .map((item: any) => ({
+      indicator: String(item.indicator),
+      source: String(item.source ?? item.source_type ?? "Static Analysis"),
+      runtime_verified: String(item.evidence_state ?? "").toUpperCase() === "OBSERVED" || String(item.source_type ?? "").toUpperCase() === "DYNAMIC",
+    }));
+  const intel = (activeCase.aiAnalysis?.recommendations ?? []).map((action) => ({
+    priority: "review" as const,
+    category: "investigation" as const,
+    action,
+    rationale: "Review this recommendation against the linked case evidence before action.",
+  }));
+  const behaviorSummary = activeCase.behaviorAnalysis?.message ?? "No evidence-backed behavior profile is available for this case.";
+  const evidenceFindings = behaviorFindings.map((finding) =>
+    `${finding.behavior} — ${finding.confidence} (${finding.source.replaceAll("_", " ")}); evidence: ${finding.evidence.join("; ")}`
+  );
+  const score = activeCase.threatAssessment?.risk_score ?? activeCase.riskScore;
+  const verdict = activeCase.threatAssessment?.verdict ?? activeCase.status.replaceAll("_", " ");
+
   return {
-    timeline_events: [
-      {
-        timestamp: new Date().toISOString(),
-        event_type: "static",
-        description: `File submitted for analysis: ${activeCase.name}`,
-        severity: "info",
-        evidence: ["SHA256 hash computed", "File type identified"]
-      },
-      {
-        timestamp: new Date().toISOString(),
-        event_type: "static",
-        description: "YARA rule matched: android_spyware",
-        severity: "warning",
-        evidence: ["Known Android spyware signature"]
-      },
-      {
-        timestamp: new Date().toISOString(),
-        event_type: "network",
-        description: "Network connection to 192.168.1.100:443",
-        severity: "critical",
-        evidence: ["Flagged as C2 server"]
-      },
-      {
-        timestamp: new Date().toISOString(),
-        event_type: "file",
-        description: "File written: /data/data/malware/cache.dat",
-        severity: "warning",
-        evidence: ["File system modification detected"]
-      }
-    ],
+    timeline_events: timeline,
     malware_explanation: {
-      summary: `This ${activeCase.type} sample exhibits multiple malicious capabilities including data theft and system compromise.`,
-      technical_details: `Static analysis identified ${activeCase.yaraMatches.length} YARA rule matches. Dynamic analysis captured network connections to suspicious endpoints. MITRE ATT&CK techniques mapped to known malware behaviors.`,
-      capabilities_identified: activeCase.capabilityTags?.map((c: any) => c.capability) || [],
-      confidence_level: 0.85
+      summary: `${activeCase.behaviorAnalysis?.mode ?? "INSUFFICIENT EVIDENCE"}: ${behaviorSummary}`,
+      technical_details: behaviorFindings.map((finding) => `${finding.behavior}: ${finding.rationale || finding.reason}`).join("\n") || "Insufficient evidence to infer specific behavior.",
+      capabilities_identified: behaviorFindings.map((finding) => `${finding.behavior} (${finding.confidence})`),
     },
-    victim_impact: {
-      data_accessed: ["SMS messages", "Contact list", "GPS location"],
-      privacy_risks: ["Personal data exposure", "Location tracking"],
-      financial_risks: ["Banking credentials theft", "Unauthorized transactions"],
-      device_integrity: ["System compromise", "Persistence mechanisms"],
-      overall_impact: "high",
-      explanation: "The malware poses a high risk to the victim through data theft and system compromise."
-    },
-    exfiltration_analysis: {
-      data_types: ["SMS messages", "Contact information", "Location data"],
-      destinations: ["192.168.1.100:443", "c2-server.evil-domain.com"],
-      timing_patterns: "Periodic every 60 seconds",
-      encryption_status: "Likely encrypted",
-      estimated_volume: "Medium",
-      risk_assessment: "High"
-    },
-    recommendations: [
-      {
-        priority: "immediate",
-        category: "containment",
-        action: "Isolate the affected device from the network",
-        rationale: "High-risk malware detected with potential for data exfiltration"
-      },
-      {
-        priority: "high",
-        category: "victim",
-        action: "Advise victim to change all passwords from a clean device",
-        rationale: "Credential theft capability detected"
-      },
-      {
-        priority: "high",
-        category: "investigation",
-        action: "Review victim's SMS logs for unauthorized messages",
-        rationale: "SMS theft capability detected"
-      }
-    ],
+    // No victim impact or exfiltration claim is populated without a dedicated
+    // observation source in the case record.
+    victim_impact: null,
+    exfiltration_analysis: null,
+    network_evidence: networkEvidence,
+    behavior_findings: behaviorFindings,
+    recommendations: intel,
     investigation_summary: {
-      executive_summary: `This investigation analyzed a ${activeCase.type} sample (ID: ${activeCase.id}). The sample exhibits multiple malicious capabilities. Victim impact is assessed as high. Overall risk score: ${activeCase.riskScore}/100.`,
-      key_findings: [
-        `Malware capabilities: ${activeCase.capabilityTags?.map((c: any) => c.capability).join(", ") || "none"}`,
-        "Data accessed: SMS messages, Contact list, GPS location",
-        "Exfiltration destinations: 192.168.1.100:443, c2-server.evil-domain.com",
-        "Critical events detected: 2"
-      ],
-      timeline_summary: "Analysis captured 4 events across static, network, and file categories",
-      risk_assessment: "High - urgent investigation recommended",
-      next_steps: [
-        "Isolate affected device from network",
-        "Advise victim to change passwords from clean device",
-        "Review SMS logs for unauthorized messages",
-        "Investigate exfiltration destinations"
-      ],
-      generated_at: new Date().toISOString()
+      executive_summary: `Behavior profile: ${activeCase.behaviorAnalysis?.mode ?? "INSUFFICIENT EVIDENCE"}. ${behaviorSummary}`,
+      key_findings: evidenceFindings.length ? evidenceFindings : ["Insufficient evidence to infer specific behavior."],
+      timeline_summary: `${timeline.length} recorded pipeline evidence event(s).`,
+      risk_assessment: `Recorded analysis score ${score}/100; verdict ${verdict}. This is a sample risk assessment, not confirmed victim impact.`,
+      next_steps: intel.map((item) => item.action),
+      generated_at: "",
     },
-    chain_verification: {
-      status: "valid",
-      is_valid: true,
-      verified_links: 7,
-      total_links: 7,
-      tampered_links: [],
-      missing_links: [],
-      errors: [],
-      verified_at: new Date().toISOString()
-    }
+    // Chain-of-custody verification is shown only when an authoritative
+    // verification result is supplied by the backend.
+    chain_verification: null,
   };
 }

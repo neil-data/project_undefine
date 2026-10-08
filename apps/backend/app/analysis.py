@@ -1363,7 +1363,9 @@ def _build_ai_analysis(
     dyn_dict = dyn_dict.model_dump() if hasattr(dyn_dict, "model_dump") else (dyn_dict if isinstance(dyn_dict, dict) else {})
     observed_count = sum(len(dyn_dict.get(key) or []) for key in (
         "network_connections", "process_tree", "api_calls", "dns_queries",
-        "files_written", "registry_changes", "persistence_artifacts",
+        "commands", "http_requests", "files_written", "files_created",
+        "files_modified", "files_deleted", "registry_changes", "services",
+        "ipc_events", "persistence_artifacts",
     ))
     evidence_correlation = (
         f"{observed_count} dynamic observation(s) are present in the normalized report."
@@ -1884,8 +1886,16 @@ async def analyze_and_save(
 
     dynamic_dict = dynamic_out.model_dump()
     behavior_analysis = infer_static_behaviors(
-        {**raw_static, "malware_bazaar": mb_data}, dynamic_dict
+        {
+            **raw_static,
+            "malware_bazaar": mb_data,
+            "capability_tags": [tag.model_dump() for tag in final_state.get("capability_tags", [])],
+        },
+        dynamic_dict,
     )
+    # The legacy narrative generator is not a behavioral evidence source. Keep
+    # this summary anchored to the structured, provenance-aware profile.
+    ai_analysis["malware_behavior"] = behavior_analysis["message"]
     dynamic_analysis_result = {
         "available": True,
         "execution_mode": dynamic_dict.get("execution_mode", "real"),
@@ -1901,9 +1911,16 @@ async def analyze_and_save(
         "c2_endpoints_detected": dynamic_dict.get("c2_endpoints_detected", []),
         "process_tree": dynamic_dict.get("process_tree", []),
         "api_calls": dynamic_dict.get("api_calls", []),
+        "commands": dynamic_dict.get("commands", []),
+        "http_requests": dynamic_dict.get("http_requests", []),
         "dns_queries": dynamic_dict.get("dns_queries", []),
         "files_written": dynamic_dict.get("files_written", []),
+        "files_created": dynamic_dict.get("files_created", []),
+        "files_modified": dynamic_dict.get("files_modified", []),
+        "files_deleted": dynamic_dict.get("files_deleted", []),
         "registry_changes": dynamic_dict.get("registry_changes", []),
+        "services": dynamic_dict.get("services", []),
+        "ipc_events": dynamic_dict.get("ipc_events", []),
         "persistence_artifacts": persistence_artifacts_paths,
     }
 

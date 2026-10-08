@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Terminal, Activity, Cpu, FlaskConical, AlertTriangle, RotateCw, ArrowLeft, Network, FileCode, ShieldAlert } from "lucide-react";
+import { Terminal, Activity, Cpu, AlertTriangle, RotateCw, ArrowLeft, Network, FileCode, ShieldAlert } from "lucide-react";
 import { ThreatCase } from "./types";
 
 interface DynamicSandboxTabProps {
@@ -9,39 +9,16 @@ interface DynamicSandboxTabProps {
 }
 
 export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicSandboxTabProps) {
-  const [logs, setLogs] = React.useState<string[]>([
-    "[SYSTEM] Dynamic analysis sandbox engine initializing...",
-    `[SYSTEM] Case loaded: ${activeCase.id} — ${activeCase.name}`,
-  ]);
-
-  const [inputVal, setInputVal] = React.useState("");
   const [isReloading, setIsReloading] = React.useState(false);
-  const bottomRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputVal.trim()) return;
-    const command = inputVal.trim();
-    setLogs(prev => [...prev, `$ ${command}`, "[SYSTEM] Directive dispatched to guest sandbox. Awaiting return frame..."]);
-    setInputVal("");
-  };
 
   const handleReload = async () => {
     setIsReloading(true);
-    setLogs(prev => [...prev, "[SYSTEM] Reloading sandbox environment and re-syncing telemetry..."]);
     try {
       if (onReload) {
         await onReload();
-      } else {
-        await new Promise(r => setTimeout(r, 600));
       }
-      setLogs(prev => [...prev, "[SYSTEM] Sandbox state synchronized successfully."]);
     } catch (err: any) {
-      setLogs(prev => [...prev, `[SYSTEM ERROR] Failed to reload: ${err?.message || "Unknown error"}`]);
+      console.error("Failed to reload analysis evidence:", err);
     } finally {
       setIsReloading(false);
     }
@@ -78,6 +55,13 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
 
   const processTree: any[] = Array.isArray(dyn?.process_tree) ? dyn.process_tree : [];
   const c2Endpoints: string[] = Array.isArray(dyn?.c2_endpoints_detected) ? dyn.c2_endpoints_detected : [];
+  const runtimeEventCount = netCount + fileCount + regCount + processTree.length +
+    (Array.isArray(dyn?.dns_queries) ? dyn.dns_queries.length : 0) +
+    (Array.isArray(dyn?.api_calls) ? dyn.api_calls.length : 0) +
+    (Array.isArray(dyn?.commands) ? dyn.commands.length : 0) +
+    (Array.isArray(dyn?.http_requests) ? dyn.http_requests.length : 0) +
+    (Array.isArray(dyn?.services) ? dyn.services.length : 0) +
+    (Array.isArray(dyn?.ipc_events) ? dyn.ipc_events.length : 0);
 
   return (
     <div className="space-y-6">
@@ -104,8 +88,8 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
           </div>
           <p className="text-[11px] text-[#A0A0A0] font-light mt-1">
             {sandboxConfigured
-              ? (dyn?.message ?? "Runtime behavior capture from isolated guest detonation environment.")
-              : "Isolated local hypervisor profile. Static and behavioral evidence preserved."}
+              ? (dyn?.message ?? "Dynamic analysis returned a result. Runtime events are listed only when present.")
+              : "Runtime events appear only when returned by dynamic analysis; static findings retain separate provenance."}
           </p>
         </div>
 
@@ -149,27 +133,27 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
         <section className="bg-[#111111] border border-[#222222] rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">Behavioral Analysis</h4>
-            <span className="text-[10px] font-mono text-[#A0A0A0]">Dynamic status: {behavior.dynamic_status.replaceAll("_", " ")}</span>
+              <span className="text-[10px] font-mono text-[#A0A0A0]">{behavior.mode}</span>
           </div>
           <p className="text-xs text-[#A0A0A0]">{behavior.message}</p>
           {behavior.fallback_reason && <p className="text-[11px] text-amber-300">Dynamic analysis unavailable: {behavior.fallback_reason}</p>}
-          {[...behavior.observed_findings, ...behavior.findings].length === 0 ? (
+          {behavior.findings.length === 0 ? (
             <p className="text-xs text-[#A0A0A0]">Insufficient evidence to infer specific behavior.</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {[...behavior.observed_findings, ...behavior.findings].map((finding, index) => (
+              {behavior.findings.map((finding, index) => (
                 <article key={`${finding.behavior}-${finding.source}-${index}`} className="border border-[#292929] rounded-md p-3 space-y-2">
                   <div className="flex justify-between gap-2">
                     <span className="text-xs font-semibold text-white">{finding.behavior}</span>
                     <span className={`text-[10px] uppercase font-mono ${finding.runtime_verified ? "text-[#16ff4d]" : "text-amber-300"}`}>
-                      {finding.runtime_verified ? "Observed" : finding.assessment}
+                      {finding.runtime_verified ? "RUNTIME VERIFIED" : `${finding.confidence} · ${finding.source.replaceAll("_", " ")}`}
                     </span>
                   </div>
-                  <p className="text-[10px] text-[#A0A0A0]">{finding.reason}</p>
+                  <p className="text-[10px] text-[#A0A0A0]">{finding.rationale || finding.reason}</p>
                   <ul className="list-disc pl-4 space-y-1 text-[10px] text-[#C8C8C8]">
                     {finding.evidence.map((item, evidenceIndex) => <li key={evidenceIndex} className="break-all">{item}</li>)}
                   </ul>
-                  <div className="text-[9px] font-mono text-[#777]">Source: {finding.source} · Runtime verified: {finding.runtime_verified ? "Yes" : "No"}</div>
+                  <div className="text-[9px] font-mono text-[#777]">Category: {finding.category.replaceAll("_", " ")} · Runtime verified: {finding.runtime_verified ? "Yes" : "No"}</div>
                 </article>
               ))}
             </div>
@@ -180,71 +164,31 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
       {/* Main Sandbox Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-        {/* Left: Terminal Console */}
+        {/* Left: Captured runtime evidence */}
         <div className="lg:col-span-8 bg-[#111111] border border-[#222222] rounded-lg overflow-hidden flex flex-col shadow-lg">
           <div className="bg-[#171717] px-4 py-3 border-b border-[#222222] flex items-center justify-between">
             <span className="text-[10px] font-mono text-[#A0A0A0] uppercase font-bold tracking-wider flex items-center gap-2">
               <Terminal className="w-3.5 h-3.5 text-[#16ff4d]" />
-              SANDBOX TERMINAL // {activeCase.id}
+              RUNTIME EVIDENCE // {activeCase.id}
             </span>
             <div className="flex items-center gap-2 text-[10px] font-mono text-[#6F6F6F]">
-              <span className="w-2 h-2 rounded-full bg-[#16ff4d] animate-ping" />
-              <span>LIVE GUEST VM</span>
+              {runtimeEventCount > 0 ? "OBSERVED TELEMETRY" : "NO RUNTIME EVENTS"}
             </div>
           </div>
 
-          <div className="p-5 font-mono text-[11px] h-[340px] overflow-y-auto space-y-2 bg-[#090909] text-[#A0A0A0] select-text">
+          <div className="p-5 font-mono text-[11px] min-h-[190px] overflow-y-auto space-y-2 bg-[#090909] text-[#A0A0A0] select-text">
             {dyn && (
               <div className="leading-relaxed pl-2 border-l-2 border-[#222222] text-[#A0A0A0] mb-4 bg-[#111111]/40 p-2 rounded-r">
-                <span className="text-[#00c2ff] font-bold">[DYNAMIC]</span> state={status} available={isConfigured ? "true" : "false"}
-                <br />
-                <span className="text-[#00c2ff] font-bold">[DYNAMIC]</span> {dyn.message || "Hypervisor telemetry recorded."}
-                {dyn.task_id && <><br /><span className="text-[#00c2ff] font-bold">[DYNAMIC]</span> task_id={dyn.task_id}</>}
-                {dyn.sandbox_url && <><br /><span className="text-[#00c2ff] font-bold">[DYNAMIC]</span> sandbox_node={dyn.sandbox_url}</>}
-                {dyn.duration_seconds && <><br /><span className="text-[#16ff4d] font-bold">[DYNAMIC]</span> detonation_duration={dyn.duration_seconds}s</>}
+                <span className="text-[#00c2ff] font-bold">DYNAMIC STATUS</span> {status}
+                {dyn.message && <><br /><span className="text-[#00c2ff] font-bold">RESULT</span> {dyn.message}</>}
+                {dyn.task_id && <><br /><span className="text-[#00c2ff] font-bold">TASK ID</span> {dyn.task_id}</>}
+                {dyn.duration_seconds != null && <><br /><span className="text-[#00c2ff] font-bold">ANALYSIS DURATION</span> {dyn.duration_seconds}s</>}
               </div>
             )}
-            {logs.map((log, index) => {
-              const isSystem = log.includes("[SYSTEM]");
-              const isUser = log.startsWith("$");
-              const isErr = log.includes("[SYSTEM ERROR]");
-              return (
-                <div key={index} className={`leading-relaxed pl-2 border-l-2 ${
-                  isErr ? "border-[#ff4040] text-[#ff4040]" :
-                  isSystem ? "border-[#00c2ff]/40 text-[#00c2ff]" :
-                  isUser ? "border-[#16ff4d]/40 text-[#16ff4d] font-bold" :
-                  "border-[#222222] text-[#A0A0A0]"
-                }`}>
-                  {log}
-                </div>
-              );
-            })}
-            <div className="flex items-center gap-1 text-[#16ff4d] text-[11px] font-mono">
-              <span>$ awaiting instructions_</span>
-              <span className="w-1.5 h-3 bg-[#16ff4d] animate-pulse inline-block" />
-            </div>
-            <div ref={bottomRef} />
+            {runtimeEventCount === 0 && (
+              <p className="text-xs leading-relaxed">No runtime events were returned. Review the evidence-backed behavioral assessment above; it is not a record of execution.</p>
+            )}
           </div>
-
-          <form
-            onSubmit={handleSubmit}
-            className="p-3 bg-[#111111] border-t border-[#222222] flex items-center gap-3"
-          >
-            <span className="text-xs font-mono text-[#16ff4d] font-bold ml-2">$</span>
-            <input
-              type="text"
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              placeholder="Enter analyst directive (e.g. dump-memory, trace-network)..."
-              className="flex-1 bg-transparent border-none text-xs font-mono text-white focus:outline-none placeholder:text-[#6F6F6F]"
-            />
-            <button
-              type="submit"
-              className="bg-[#16ff4d] hover:bg-[#16ff4d]/90 text-[#090909] font-mono text-[10px] uppercase font-bold px-3 py-1.5 rounded transition-all shrink-0 active:scale-95"
-            >
-              EXEC
-            </button>
-          </form>
         </div>
 
         {/* Right Rail: Safe Dynamic Status & Case Context */}
@@ -257,8 +201,8 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
             </span>
             <div className="space-y-2 text-[#A0A0A0]">
               <p><span className="text-white font-bold">STATE:</span> <span className="text-[#16ff4d]">{status.toUpperCase()}</span></p>
-              <p><span className="text-white font-bold">MODE:</span> <span className="text-white">Real Detonation</span></p>
-              <p><span className="text-white font-bold">REAL SANDBOX:</span> <span className="text-white">{(dyn?.real_sandbox_available ?? (dyn?.execution_mode === "real")) ? "Yes" : "No"}</span></p>
+              <p><span className="text-white font-bold">PROFILE:</span> <span className="text-white">{behavior?.mode ?? "Insufficient evidence"}</span></p>
+              <p><span className="text-white font-bold">RUNTIME TELEMETRY:</span> <span className="text-white">{runtimeEventCount > 0 ? "Observed" : "None returned"}</span></p>
               {dyn?.target_architecture && (
                 <p><span className="text-white font-bold">ARCH:</span> <span className="text-white">{dyn.target_architecture}</span></p>
               )}
@@ -281,19 +225,6 @@ export function DynamicSandboxTab({ activeCase, onNavigate, onReload }: DynamicS
               <p><span className="text-white font-bold">FORMAT:</span> {activeCase.type}</p>
               <p><span className="text-white font-bold">RISK:</span> <span className={activeCase.riskScore >= 60 ? "text-[#ff4040] font-bold" : "text-[#f4b400] font-bold"}>{activeCase.riskScore}/100</span></p>
               <p><span className="text-white font-bold">STATUS:</span> {String(activeCase.status).replace("_", " ")}</p>
-            </div>
-          </div>
-
-          {/* Sandbox Capabilities Card */}
-          <div className="bg-[#111111] border border-[#222222] rounded-lg p-5 space-y-3 font-mono text-[11px]">
-            <span className="text-[10px] text-[#6F6F6F] uppercase tracking-widest block border-b border-[#222222]/60 pb-2">
-              SANDBOX CAPABILITIES
-            </span>
-            <div className="space-y-1.5 text-[#6F6F6F] text-[10px]">
-              <p className="flex items-center gap-2"><Cpu className="w-3 h-3 text-[#00c2ff]" /> Air-gapped containerized VM</p>
-              <p className="flex items-center gap-2"><Terminal className="w-3 h-3 text-[#00c2ff]" /> Syscall & API trace hook</p>
-              <p className="flex items-center gap-2"><FlaskConical className="w-3 h-3 text-[#00c2ff]" /> Real-time network stream dissection</p>
-              <p className="flex items-center gap-2"><Activity className="w-3 h-3 text-[#00c2ff]" /> Memory dump & artifact capture</p>
             </div>
           </div>
 
